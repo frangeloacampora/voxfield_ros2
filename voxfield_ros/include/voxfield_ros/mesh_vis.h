@@ -28,15 +28,16 @@
 #include <limits>
 #include <string>
 
-#include <eigen_conversions/eigen_msg.h>
-#include <visualization_msgs/Marker.h>
+#include <rclcpp/rclcpp.hpp>
+#include <tf2_eigen/tf2_eigen.hpp>
+#include <visualization_msgs/msg/marker.hpp>
 
 #include <voxfield/core/common.h>
 #include <voxfield/integrator/esdf_integrator.h>
 #include <voxfield/integrator/tsdf_integrator.h>
 #include <voxfield/mesh/mesh.h>
 #include <voxfield/mesh/mesh_layer.h>
-#include <voxfield_msgs/Mesh.h>
+#include <voxfield_msgs/msg/mesh.hpp>
 
 #include "voxfield_ros/conversions.h"
 
@@ -77,7 +78,7 @@ inline Point lambertShading(
 }
 
 inline void lambertColorFromColorAndNormal(
-    const Color& color, const Point& normal, std_msgs::ColorRGBA* color_msg) {
+    const Color& color, const Point& normal, std_msgs::msg::ColorRGBA* color_msg) {
   // These are just some arbitrary light directions, I believe taken from
   // OpenChisel.
   const Point light_dir = Point(0.8f, -0.2f, 0.7f).normalized();
@@ -95,12 +96,12 @@ inline void lambertColorFromColorAndNormal(
 }
 
 inline void lambertColorFromNormal(
-    const Point& normal, std_msgs::ColorRGBA* color_msg) {
+    const Point& normal, std_msgs::msg::ColorRGBA* color_msg) {
   lambertColorFromColorAndNormal(Color(127, 127, 127), normal, color_msg);
 }
 
 inline void normalColorFromNormal(
-    const Point& normal, std_msgs::ColorRGBA* color_msg) {
+    const Point& normal, std_msgs::msg::ColorRGBA* color_msg) {
   // Normals should be in the scale -1 to 1, so we need to shift them to
   // 0 -> 1 range.
   color_msg->r = normal.x() * 0.5 + 0.5;
@@ -110,7 +111,7 @@ inline void normalColorFromNormal(
 }
 
 inline void heightColorFromVertex(
-    const Point& vertex, std_msgs::ColorRGBA* color_msg) {
+    const Point& vertex, std_msgs::msg::ColorRGBA* color_msg) {
   // TODO(helenol): figure out a nicer way to do this without hard-coded
   // constants.
   const double min_z = -1;
@@ -121,10 +122,10 @@ inline void heightColorFromVertex(
   colorVoxbloxToMsg(rainbowColorMap(mapped_height), color_msg);
 }
 
-inline std_msgs::ColorRGBA getVertexColor(
+inline std_msgs::msg::ColorRGBA getVertexColor(
     const Mesh::ConstPtr& mesh, const ColorMode& color_mode,
     const size_t index) {
-  std_msgs::ColorRGBA color_msg;
+  std_msgs::msg::ColorRGBA color_msg;
   switch (color_mode) {
     case kColor:
       colorVoxbloxToMsg(mesh->colors[index], &color_msg);
@@ -151,11 +152,12 @@ inline std_msgs::ColorRGBA getVertexColor(
 }
 
 inline void generateVoxbloxMeshMsg(
-    MeshLayer* mesh_layer, ColorMode color_mode, voxfield_msgs::Mesh* mesh_msg) {
+    MeshLayer* mesh_layer, ColorMode color_mode,
+    voxfield_msgs::msg::Mesh* mesh_msg, const rclcpp::Time& stamp) {
   CHECK_NOTNULL(mesh_msg);
   CHECK_NOTNULL(mesh_layer);
 
-  mesh_msg->header.stamp = ros::Time::now();
+  mesh_msg->header.stamp = stamp;
 
   BlockIndexList mesh_indices;
   mesh_layer->getAllUpdatedMeshes(&mesh_indices);
@@ -166,7 +168,7 @@ inline void generateVoxbloxMeshMsg(
   for (const BlockIndex& block_index : mesh_indices) {
     Mesh::Ptr mesh = mesh_layer->getMeshPtrByIndex(block_index);
 
-    voxfield_msgs::MeshBlock mesh_block;
+    voxfield_msgs::msg::MeshBlock mesh_block;
     mesh_block.index[0] = block_index.x();
     mesh_block.index[1] = block_index.y();
     mesh_block.index[2] = block_index.z();
@@ -211,7 +213,7 @@ inline void generateVoxbloxMeshMsg(
           std::numeric_limits<uint16_t>::max() * normalized_verticies.z());
 
       if (color_mode != kNormals) {
-        const std_msgs::ColorRGBA color_msg =
+        const std_msgs::msg::ColorRGBA color_msg =
             getVertexColor(mesh, color_mode, i);
         mesh_block.r.push_back(
             std::numeric_limits<uint8_t>::max() * color_msg.r);
@@ -235,17 +237,17 @@ inline void generateVoxbloxMeshMsg(
 
 inline void generateVoxbloxMeshMsg(
     const MeshLayer::Ptr& mesh_layer, ColorMode color_mode,
-    voxfield_msgs::Mesh* mesh_msg) {
+    voxfield_msgs::msg::Mesh* mesh_msg, const rclcpp::Time& stamp) {
   CHECK_NOTNULL(mesh_msg);
   CHECK(mesh_layer);
-  generateVoxbloxMeshMsg(mesh_layer.get(), color_mode, mesh_msg);
+  generateVoxbloxMeshMsg(mesh_layer.get(), color_mode, mesh_msg, stamp);
 }
 
 inline void fillMarkerWithMesh(
     const MeshLayer::ConstPtr& mesh_layer, ColorMode color_mode,
-    visualization_msgs::Marker* marker) {
+    visualization_msgs::msg::Marker* marker, const rclcpp::Time& stamp) {
   CHECK_NOTNULL(marker);
-  marker->header.stamp = ros::Time::now();
+  marker->header.stamp = stamp;
   marker->ns = "mesh";
   marker->scale.x = 1;
   marker->scale.y = 1;
@@ -254,7 +256,7 @@ inline void fillMarkerWithMesh(
   marker->pose.orientation.y = 0;
   marker->pose.orientation.z = 0;
   marker->pose.orientation.w = 1;
-  marker->type = visualization_msgs::Marker::TRIANGLE_LIST;
+  marker->type = visualization_msgs::msg::Marker::TRIANGLE_LIST;
 
   BlockIndexList mesh_indices;
   mesh_layer->getAllAllocatedMeshes(&mesh_indices);
@@ -275,8 +277,8 @@ inline void fillMarkerWithMesh(
     }
 
     for (size_t i = 0u; i < mesh->vertices.size(); i++) {
-      geometry_msgs::Point point_msg;
-      tf::pointEigenToMsg(mesh->vertices[i].cast<double>(), point_msg);
+      const geometry_msgs::msg::Point point_msg =
+          tf2::toMsg(mesh->vertices[i].cast<double>());
       marker->points.push_back(point_msg);
       marker->colors.push_back(getVertexColor(mesh, color_mode, i));
     }

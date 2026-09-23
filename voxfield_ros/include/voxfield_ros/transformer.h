@@ -1,10 +1,13 @@
 #ifndef VOXFIELD_ROS_TRANSFORMER_H_
 #define VOXFIELD_ROS_TRANSFORMER_H_
 
+#include <memory>
 #include <string>
 
-#include <geometry_msgs/TransformStamped.h>
-#include <tf/transform_listener.h>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 
 #include <voxfield/core/common.h>
 
@@ -18,13 +21,14 @@ class Transformer {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  Transformer(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
+  explicit Transformer(rclcpp::Node::SharedPtr node);
 
   bool lookupTransform(
       const std::string& from_frame, const std::string& to_frame,
-      const ros::Time& timestamp, Transformation* transform);
+      const rclcpp::Time& timestamp, Transformation* transform);
 
-  void transformCallback(const geometry_msgs::TransformStamped& transform_msg);
+  void transformCallback(
+      const geometry_msgs::msg::TransformStamped::SharedPtr transform_msg);
 
   Transformation getStaticTransform();
 
@@ -33,13 +37,12 @@ class Transformer {
  private:
   bool lookupTransformTf(
       const std::string& from_frame, const std::string& to_frame,
-      const ros::Time& timestamp, Transformation* transform);
+      const rclcpp::Time& timestamp, Transformation* transform);
 
   bool lookupTransformQueue(
-      const ros::Time& timestamp, Transformation* transform);
+      const rclcpp::Time& timestamp, Transformation* transform);
 
-  ros::NodeHandle nh_;
-  ros::NodeHandle nh_private_;
+  rclcpp::Node::SharedPtr node_;
 
   /**
    * Global/map coordinate frame. Will always look up TF transforms to this
@@ -76,13 +79,15 @@ class Transformer {
    * To be replaced (at least optionally) with odometry + static transform
    * from IMU to visual frame.
    */
-  tf::TransformListener tf_listener_;
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-  // l Only used if use_tf_transforms_ set to false.
-  ros::Subscriber transform_sub_;
+  // Only used if use_tf_transforms_ set to false.
+  rclcpp::Subscription<geometry_msgs::msg::TransformStamped>::SharedPtr
+      transform_sub_;
 
-  // l Transform queue, used only when use_tf_transforms is false.
-  AlignedDeque<geometry_msgs::TransformStamped> transform_queue_;
+  // Transform queue, used only when use_tf_transforms is false.
+  AlignedDeque<geometry_msgs::msg::TransformStamped> transform_queue_;
 };
 
 }  // namespace voxfield

@@ -243,3 +243,120 @@ type refs already read `voxfield_msgs/...` from the Phase 1 rename;
 **Accept:** builds (0 errors, clean env + normal shell). `ros2 interface
 show voxfield_msgs/msg/Layer`, `.../MultiMesh`, and
 `voxfield_msgs/srv/FilePath` all print correctly (verified manually).
+
+## Phase 5: `voxfield_ros` infrastructure (no servers yet)
+
+`package.xml` per plan §6 Phase 5 step 1. One deviation worth flagging:
+even though `voxfield_rviz_plugin` is only an `exec_depend` (no C++ code in
+`voxfield_ros` includes its headers -- confirmed by grep before writing
+this), colcon still refuses to build `voxfield_ros` while that package is
+present-but-unbuilt in the workspace: colcon's environment-hook sourcing
+step for a package's *build* env walks its full package.xml dependency
+list (build **and** exec) and hard-fails with "Failed to find the
+following files: .../voxfield_rviz_plugin/share/voxfield_rviz_plugin/
+package.sh" if a listed dependency exists as a discoverable package.xml in
+the workspace but was never built. Since `voxfield_rviz_plugin/` still has
+its ROS 1/catkin `package.xml`/`CMakeLists.txt` (it's ported in Phase 8),
+this is a hard build blocker for every phase from here until Phase 8 --
+not specific to the clean env or the normal shell, reproduced identically
+in both. Fix: `touch voxfield_rviz_plugin/COLCON_IGNORE`, so colcon's
+package discovery doesn't see it as a workspace package at all. This is
+temporary and must be removed as part of Phase 8 (once
+`voxfield_rviz_plugin` has its own ported `package.xml`, it needs to be
+discoverable and buildable again, and the same colcon behavior then
+correctly enforces build order between it and `voxfield_ros`).
+
+Ported/added, all header-only unless noted:
+- **`param_utils.h`** (D6): `getParam<T>`/`param()` implemented with
+  `if constexpr` branches on `T` (bool, `std::string`,
+  `std::vector<double>`, floating types -> declared/read as `double`,
+  integral types -> declared/read as `int64_t`), each declaring once via
+  `has_parameter()` + `ParameterDescriptor{dynamic_typing=true}` and
+  coercing/erroring/defaulting per D6's rules. `getTransformationParam()`
+  reads the flat 16-double array, checks presence via
+  `has_parameter()`/`get_parameter_overrides()` before declaring anything
+  (so an absent transform param doesn't get force-declared), builds a
+  `Transformation::TransformationMatrix` and calls kindr's own
+  `constructAndRenormalizeRotation()` (exactly what the plan's
+  "renormalize via `constructAndRenormalize`" note is getting at, just
+  via the transformation-level factory rather than composing
+  `RotationQuaternion::constructAndRenormalize` by hand), then applies
+  `invert_<name>` if set.
+- **`kindr_conversions.h`** (D4): `transformKindrToMsg`/`transformMsgToKindr`
+  templated on `Scalar`, replacing ROS 1's `transformKindrToTF`/
+  `transformTFToKindr`/`transformKindrToMsg`/`transformMsgToKindr` (the TF
+  pair collapses into the Msg pair -- no separate `tf::Transform` type in
+  ROS 2). `xmlRpcToKindr` isn't reimplemented separately; its job is
+  `getTransformationParam()`'s, which needs the same
+  declare-and-coerce machinery anyway. Found and fixed one real bug while
+  bringing this up: `Rotation::Implementation(...).normalized()` doesn't
+  implicitly convert to `Rotation` (kindr's constructor from
+  `Implementation` is `explicit`) -- needs a direct-init call, not
+  copy-init.
+- **`ros_params.h`**: all 15 `get*ConfigFromRosParam` functions retargeted
+  to `rclcpp::Node&`, `nh_private.param(name, v, v)` -> `param(node, name,
+  v)` mechanically (every call in this file was already in that
+  self-referential `v, v` form). Names/defaults diffed unchanged against
+  the pre-port version.
+- **`conversions.h`/`conversions_inl.h`**: message types -> `::msg::`,
+  dropped `pcl_ros/point_cloud.h` for `pcl_conversions.h`, added
+  `publishPclCloud()` (D11), `std_msgs::ColorRGBA` ->
+  `std_msgs::msg::ColorRGBA`. `colorVoxbloxToMsg`/`colorMsgToVoxblox` kept
+  (D1 keep-list, free functions).
+- **`mesh_vis.h`, `ptcloud_vis.h`**: message/marker types -> `::msg::`;
+  `eigen_conversions/eigen_msg.h` + `tf::pointEigenToMsg` ->
+  `tf2_eigen/tf2_eigen.hpp` + `tf2::toMsg()`; per D12,
+  `generateVoxbloxMeshMsg()` (both overloads) and `fillMarkerWithMesh()`
+  now take an explicit `const rclcpp::Time& stamp` parameter instead of
+  calling `ros::Time::now()` internally (callers, added in Phase 6/7,
+  must pass `node_->now()`). `ptcloud_vis.h`'s `eigen_conversions`/
+  `pcl_ros` includes turned out to be unused (grepped for call sites) --
+  dropped rather than translated.
+- **`intensity_vis.h`, `mesh_pcl.h`**: message types -> `::msg::`;
+  `mesh_pcl.h`'s unused `pcl_ros/point_cloud.h` include dropped.
+- **`transformer.h`/`.cc`** (D10): `Transformer(rclcpp::Node::SharedPtr)`
+  replaces the `(nh, nh_private)` pair; `tf::TransformListener` member ->
+  `std::shared_ptr<tf2_ros::Buffer>` + `std::shared_ptr<tf2_ros::
+  TransformListener>`, both still constructed unconditionally in the
+  constructor (ROS 1 built `tf::TransformListener` unconditionally too,
+  even when `use_tf_transforms_` is false -- kept identical rather than
+  making it conditional, per the plan's behavior-preservation rule).
+  `canTransform`/`lookupTransform` moved to the `tf2_ros::Buffer` API,
+  catching `tf2::TransformException`. Every stamp comparison/subtraction
+  in `lookupTransformQueue` now goes through an explicit
+  `rclcpp::Time(msg.header.stamp, RCL_ROS_TIME)` per pitfall §8.1 (mixing
+  `RCL_ROS_TIME` and the default `RCL_SYSTEM_TIME` throws). `T_B_D`/`T_B_C`/
+  `T_C_CH` now come from `getTransformationParam()` (replacing the
+  `XmlRpc::XmlRpcValue` + `xmlRpcToKindr()` + manual invert-flag reading);
+  behavior is identical since `getTransformationParam()` already only
+  applies the invert when the base transform was present, matching the
+  original `if (nh_private_.getParam(...))`-gated logic.
+- **`interactive_slider.h`/`.cc`**: constructor now also takes
+  `rclcpp::Node::SharedPtr node` (needed to construct
+  `interactive_markers::InteractiveMarkerServer`, which has no
+  no-node ROS 2 constructor). Confirmed nothing in the server sources
+  instantiates `InteractiveSlider` yet (grepped) -- ported to compile per
+  the plan, no runtime test.
+- **`node_main.h`** (D16): `initGflagsAndGlog(argc, argv)` strips ROS args
+  via `rclcpp::remove_ros_arguments()`, then `InitGoogleLogging` +
+  `FLAGS_alsologtostderr = true` (replacing the old
+  `args="-alsologtostderr"` launch convention with a default, still
+  command-line-overridable) + `ParseCommandLineFlags` +
+  `InstallFailureSignalHandler()`.
+
+**Tests:** `test/test_param_utils.cc` (missing param -> default; int
+override coerced to double/float; double override coerced to int when
+integral vs. falls back to default when not; repeated reads of the same
+name; the in-place `param()` helper; `getTransformationParam()` absent /
+round-trip / inverted / wrong-size-array) and
+`test/test_kindr_conversions.cc` (msg->kindr->msg round trip; identity;
+a non-unit-norm quaternion gets renormalized). Both define their own
+`main()` (the first needs `rclcpp::init`/`shutdown`), so
+`ament_add_gtest(... SKIP_LINKING_MAIN_LIBRARIES)` + explicit `gtest` link.
+
+**Accept:** `voxfield_ros` library target (currently just
+`interactive_slider.cc` + `transformer.cc` -- servers land in Phases 6-7)
+builds with 0 errors in both the clean env and the normal shell (both
+freshly rebuilt from an empty `install/`, with `voxfield_rviz_plugin`
+ignored per above). `test_param_utils` + `test_kindr_conversions`: 15
+tests, 0 failures.
