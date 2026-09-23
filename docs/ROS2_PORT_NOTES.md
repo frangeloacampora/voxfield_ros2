@@ -724,3 +724,164 @@ upstream bugs silently" rule (§0.5) — and moot in practice, since
   `AssertionError` and left the file untouched on any mismatch).
 
 **Accept (plan §6 Phase 9):** met.
+
+## Phase 10: Launch files & RViz2 configs
+
+### Generic launch + per-dataset-method wrappers
+Wrote `launch/mapping.launch.py`: one `OpaqueFunction`-driven launch that
+takes `method` (`voxfield`/`voxblox`/`fiesta`/`voxedt`/`np_tsdf`/`tsdf` ->
+`<method>_server`) and `dataset` (`cow`/`kitti`/`mai`/`basement`/`vicon`)
+and resolves per-dataset defaults (param/calib YAML, robot model, point
+cloud/transform topic, RViz config, bag speed) from a table built by
+reading every ROS 1 `.launch` file for that dataset. `bag_file` defaults
+to empty (plan §6 Phase 10 step 3 -- the ROS 1 defaults were all
+hard-coded to `/media/yuepan/...` or `/Users/helen/...`); passing one
+plays it with `ros2 bag play ... --clock -r <speed>`. Every other
+override (`speed`, `rviz`, `rviz_config`, `robot_model_file`,
+`pointcloud_topic`, `transform_topic`, `use_sim_time`) defaults to empty
+meaning "use this dataset's default," so `ros2 launch voxfield_ros
+mapping.launch.py method:=voxfield dataset:=kitti play_bag:=false` (the
+plan's own accept-criterion command) works with zero further arguments.
+Verified live: starts `voxfield_node` with the exact §3.4 topic/service
+graph (`ros2 node info /voxfield_node`, including
+`/voxfield_node/esdf_map_out`, `~/save_esdf_map`, etc.) and RViz2 with no
+errors.
+
+Per-file wrappers under `launch/{voxfield,voxblox,fiesta,voxedt}_launch/`
+and `launch/eval/` (19 total, one per surviving ROS 1 `.launch` file,
+`bak/` skipped per plan §6 Phase 10 step 2) each `IncludeLaunchDescription`
+`mapping.launch.py` with `method`/`dataset` fixed and every pass-through
+arg re-declared so `ros2 launch voxfield_ros kitti_voxfield.launch.py
+bag_file:=...` still works. Per-file deviations found by diffing each ROS
+1 file against its dataset's "canonical" (most common) variant were
+carried over as explicit non-empty defaults in that one wrapper, not
+baked into `mapping.launch.py`'s dataset table:
+- `kitti_voxblox.launch.py`, `kitti_fiesta.launch.py`,
+  `kitti_voxedt.launch.py`: `pointcloud_topic` defaults to
+  `/velodyne_points_filtered` and `speed` to `0.25`, matching their ROS 1
+  originals (`kitti_voxfield.launch` alone used `/velodyne_points` /
+  `0.5`, which is what `mapping.launch.py`'s `kitti` table entry uses).
+- `kitti_fiesta.launch.py`, `kitti_voxedt.launch.py`: their ROS 1
+  originals never set `robot_model_file` at all, so no robot-mesh marker
+  is published (`TsdfServer::robot_model_file_` / `NpTsdfServer::
+  robot_model_file_` default to `""`, confirmed by reading `ros_params.h`
+  callers). Reproducing "don't set this parameter" through a launch
+  argument default needed a way to distinguish that from "use this
+  dataset's default" (which is what an empty string already means), so
+  `mapping.launch.py`'s `robot_model_file` argument accepts a
+  `__none__` sentinel for exactly this case, documented in the launch
+  file's own docstring.
+- `basement_voxfield.launch.py`, `basement_voxblox.launch.py`: the ROS 1
+  originals never set `<param name="use_sim_time">` at all (an
+  omission/inconsistency vs. every other dataset's launch file, not
+  fixed here since it's upstream behavior -- but ROS 2 pitfall §8.6 makes
+  `use_sim_time` mandatory on every node regardless, so both wrappers
+  still default it to `true` like all the others).
+
+### Dropped dead launch argument: `process_every_nth_frame`
+Declared with a default in nearly every ROS 1 `.launch` file but never
+read anywhere in `voxfield_ros` (`grep` for it outside `.launch` files
+returns nothing) -- a no-op argument, not a real deviation to preserve.
+Dropped rather than ported.
+
+### Eval launches (`launch/eval/*.launch.py`)
+Ported all 4 as standalone `voxblox_eval` launches (no `mapping.launch.py`
+involvement -- the node, params, and shape differ too much from the
+mapping servers to share it). `eval_cow_and_lady.launch.py` also starts
+RViz2 with `cfg/rviz/eval.rviz`; the other three don't (matching their
+ROS 1 originals). All map-file path arguments (`gt_file_path`,
+`voxblox_file_path`, `voxblox_esdf_file_path`, `voxblox_occ_file_path`)
+default to empty rather than the ROS 1 originals' hard-coded personal
+paths, per plan §6 Phase 10 step 3.
+
+**Found (pre-existing upstream issue, not fixed):** `eval_cow.launch` and
+`eval_euroc.launch` each loaded `<rosparam file="$(find voxfield_ros)/cfg/
+{cow,euroc}_dataset.yaml"/>`, but neither `cfg/cow_dataset.yaml` nor
+`cfg/euroc_dataset.yaml` exists anywhere in this repository's history --
+both ROS 1 launch files were already non-functional. `eval_kitti.launch`
+has the same kind of line, but it was already commented out there. Since
+in ROS 2 a `parameters=[<missing path>]` entry aborts the entire launch
+(not just a few params, as `<rosparam file=...>` failing did in ROS 1),
+porting the line byte-for-byte would make these launch files
+unconditionally fail to start at all. The dead reference is omitted in
+`eval_cow.launch.py` / `eval_euroc.launch.py` rather than ported; see the
+docstring in each file for the same note.
+
+### RViz2 configs
+Converted all 8 files in `cfg/rviz/*.rviz` in place with a one-shot script
+(not shipped -- scratch tool, per plan §6 Phase 10 step 5's "hand-write
+YAML using existing RViz2 configs as templates" option), rather than the
+"launch rviz2, add displays, save" alternative, since the latter can't be
+driven headlessly/reproducibly. Verified the target format empirically
+against several live Jazzy packages' shipped `.rviz` files (not just the
+plan's class-rename table), since rviz2's on-disk schema changed more
+than a class rename in several places:
+- **Topic properties changed shape.** ROS 1's flat `Topic: /foo` (and
+  Marker/MarkerArray's `Marker Topic: /foo`) became a nested QoS block --
+  confirmed against `/opt/ros/jazzy/share/nav2_bringup/rviz/
+  nav2_default_view.rviz`'s `PointCloud2`/`MarkerArray`/`SetInitialPose`
+  entries: `Topic: {Depth, Durability Policy, History Policy,
+  Reliability Policy, Value}`, plus `Filter size` for classes derived
+  from `MessageFilterDisplay` (confirmed via that same file's `LaserScan`
+  entry -- the same base class `VoxfieldMeshDisplay`/
+  `VoxfieldMultiMeshDisplay` use, per Phase 8). `Marker Topic` renamed to
+  plain `Topic`; the separate `Queue Size` / `Unreliable` properties are
+  gone, superseded by the QoS block's `Depth` / `Reliability Policy`.
+  `~mesh` is the only latched publisher (plan §3.4 / D7), so only
+  `VoxfieldMesh`'s/`VoxfieldMultiMesh`'s `Topic` block gets `Durability
+  Policy: Transient Local` + `Depth: 1`; everything else gets `Volatile`
+  + `Depth: 5` (D7's non-latched default).
+- **`Global Options` dropped two fields.** `Default Light` and `Frame
+  Rate` no longer appear in any live Jazzy `.rviz` file checked
+  (`nav2_bringup`, `ros_gz_sim_demos`, `depth_image_proc`); only
+  `Background Color` and `Fixed Frame` remain. Dropped on conversion.
+- **`Window Geometry`'s `QMainWindow State`** is an opaque hex-encoded Qt
+  binary blob (saved dock/window layout only, no functional effect).
+  Dropped; the rest of `Window Geometry` (dock collapse states) is kept.
+- Per plan §1.3, dropped displays/panels using out-of-scope third-party
+  plugins: `mav_planning_rviz/PlanningPanel` (a `Panels` entry in
+  `vicon_10cm.rviz` and `path_planning_exp.rviz`) and
+  `rviz_plugin_tutorials/Imu` (a `Displays` entry in the same two files).
+  Their sibling displays that use plain built-in rviz classes but
+  reference topics from the same out-of-scope `mav_local_planner`/
+  `mavros`/`vins_fusion` stack (e.g. `Local Path` `MarkerArray`,
+  `PlanningMarker` `InteractiveMarkers`, `Mavros Odometry`) were **kept**
+  -- the plan's out-of-scope list names two specific plugin classes, not
+  "anything path-planning-related," and those displays simply show
+  nothing when nothing publishes to their topics, same as in the ROS 1
+  original when run without the full mav_planning stack.
+- Found and fixed a pre-existing Phase 1 rename-script miss, explicitly
+  deferred to this phase by the plan itself (§6 Phase 1 step 4: "the old
+  `.rviz` files will be regenerated in Phase 10 anyway"): `vicon_10cm.rviz`
+  and `path_planning_exp.rviz`'s `Displays` panel `Expanded` lists still
+  said `/VoxbloxMesh1` even though the display itself already read `Name:
+  VoxfieldMesh`. Fixed to `/VoxfieldMesh1` during conversion.
+- All topic paths `/voxblox_node/...` -> `/voxfield_node/...` (D1's
+  launch node-name rename). Colors, alpha, slice min/max intensity ranges,
+  Grid/Marker/PointCloud2 styling, and View (Orbit/TopDownOrtho)
+  parameters carried over unchanged from each original file.
+
+Verified: loaded all 8 converted files in a live `rviz2` (in the same
+isolated shell used for the Phase 8 plugin-loading check, to route around
+this machine's unrelated snap/libpthread issue) -- zero pluginlib/Ogre/
+config-parse errors, and `kitti_25cm.rviz` / `eval.rviz` additionally
+confirmed via log output that the enabled `PointCloud2` display correctly
+subscribed to its (renamed) topic.
+
+### Verification
+- `ros2 launch voxfield_ros mapping.launch.py method:=voxfield
+  dataset:=kitti play_bag:=false` (plan's own accept command): starts
+  `voxfield_node` + RViz2 with no errors; `ros2 node info /voxfield_node`
+  matches the plan §3.4 interface exactly.
+- `ros2 launch voxfield_ros kitti_fiesta.launch.py play_bag:=false
+  rviz:=false`: process argv confirms `-r pointcloud:=/velodyne_points_filtered`
+  was applied, verifying the per-file deviation override plumbing.
+- Full clean rebuild (`rm -rf build install log`, then
+  `scripts/clean_env.sh colcon build --symlink-install`) succeeds with 0
+  errors; `colcon test-result --verbose`: 65/65 tests still pass.
+- No dataset/bag is available in this environment, so bag playback
+  (`ExecuteProcess(['ros2', 'bag', 'play', ...])`) and the mesh actually
+  building progressively in RViz2 are unverified; that's Phase 12.
+
+**Accept (plan §6 Phase 10):** met, modulo the dataset-playback caveat
+above (Phase 12).

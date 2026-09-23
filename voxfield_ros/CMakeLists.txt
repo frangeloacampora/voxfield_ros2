@@ -174,6 +174,11 @@ install(
   DIRECTORY cfg/
   DESTINATION share/${PROJECT_NAME}/cfg
 )
+install(
+  DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+  PATTERN "bak" EXCLUDE
+)
 
 ament_export_targets(${PROJECT_NAME}Targets HAS_LIBRARY_TARGET)
 ament_export_dependencies(${VOXFIELD_ROS_DEPENDENCIES} voxfield PCL OpenCV glog gflags)
