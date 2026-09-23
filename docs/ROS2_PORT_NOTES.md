@@ -360,3 +360,188 @@ builds with 0 errors in both the clean env and the normal shell (both
 freshly rebuilt from an empty `install/`, with `voxfield_rviz_plugin`
 ignored per above). `test_param_utils` + `test_kindr_conversions`: 15
 tests, 0 failures.
+
+## Phase 6: `TsdfServer` and `NpTsdfServer`
+
+Both ported together per plan §6 Phase 6, following D5-D16 mechanically:
+`(nh, nh_private)` -> single `rclcpp::Node::SharedPtr node_` held (not
+inherited from); every publisher/subscription/service/timer becomes a
+`...::SharedPtr` member; private topics/services use the `"~/name"`
+convention (e.g. `nh_private_.advertise("mesh")` ->
+`node_->create_publisher<...>("~/mesh", qos)`); QoS per D7 (a
+`transient_local().reliable()` depth-1 QoS for every latched topic; `~/
+tsdf_map_out` stays plain `QoS(1)`, matching the ROS 1 `advertise(..., 1,
+false)`); timers via `rclcpp::create_timer(node_, node_->get_clock(), ...)`
+(D8, so they follow `use_sim_time`, not wall time); `ros::WallTime` timing
+-> `std::chrono::steady_clock`; every stored/compared timestamp
+(`last_msg_time_ptcloud_`, `last_msg_time_freespace_ptcloud_`, queue
+lookups) built as `rclcpp::Time(..., RCL_ROS_TIME)` per pitfall §8.1;
+`Marker::MODIFY` -> `Marker::ADD` (D says same numeric value, confirmed:
+both are `0`) with `publishRobotMesh()` still called unconditionally from
+`processPointCloudMessageAndInsert()` regardless of `publish_robot_model_`,
+matching ROS 1's (seemingly accidental) behavior exactly. ICP correction
+publishes both a TF broadcast and a `~/icp_transform` message, all three
+`geometry_msgs::msg::Transform`s built via the same `transformKindrToMsg()`
+call (ROS 2 has no separate `tf::Transform` type, so the ROS 1 code's
+`tf::transformKindrToTF()` + `tf::transformKindrToMsg()` split collapses
+into one conversion path).
+
+**Callback signature deviation from the plan's literal suggestion:**
+`rclcpp::Subscription`'s accepted callback signatures (`rclcpp/
+any_subscription_callback.hpp`) include `void(sensor_msgs::msg::
+PointCloud2::SharedPtr)` (by value) but *not* `void(const
+sensor_msgs::msg::PointCloud2::SharedPtr&)` (by const-ref) -- the latter
+fails to compile against `std::bind`'s result type with a wall of
+`std::variant`/`enable_if` template errors. `insertPointcloud()`,
+`insertFreespacePointcloud()`, and `processPointCloudMessageAndInsert()`
+all take the `SharedPtr` by value instead (still non-const, so the
+`fields[d].datatype` rewrite hack still works); `getNextPointcloudFromQueue()`
+and the two `std::queue<...>` members follow the same type.
+
+**Found and fixed (toolchain-only, not a rename or behavior issue):**
+`mesh_vis.h`'s `fillMarkerWithMesh()` (Phase 5, header-only, never actually
+compiled until Phase 6 put it in a translation unit for the first time --
+`interactive_slider.cc`/`transformer.cc` don't include it) had
+`tf2::toMsg(mesh->vertices[i].cast<double>())`: the `cast<double>()` result
+is an Eigen expression template that implicitly converts to *both*
+`tf2::toMsg(const Eigen::Vector3d&)` and `tf2::toMsg(const
+Eigen::Matrix<double,6,1>&)`, an ambiguous overload under GCC 13/Eigen 3.4.
+Fixed by binding the cast to a named `Eigen::Vector3d` first. Also fixed a
+`-Wreorder` warning in both servers' constructors (`transformer_` must be
+initialized before `last_msg_time_ptcloud_`/`last_msg_time_freespace_ptcloud_`
+to match declaration order, once the ROS 2 member types changed the
+natural initializer-list ordering that used to fall out of the ROS 1
+`ros::Time`/`Transformer` types).
+
+**Found, documented, not fixed (pre-existing, per plan §0 item 6):**
+- `timing_` (both servers) and `publish_robot_model_` (`TsdfServer`) are
+  read via `nh_private.param("x", member_, member_)` -- i.e. the ROS 1 code
+  used the member's own current value as its default -- without the member
+  ever being given a value first, anywhere in the constructor's initializer
+  list. This is an indeterminate-value read (UB), not merely "wrong
+  default"; unlike the `width_`/`height_`/`vx_`/`fx_` case below (which the
+  plan explicitly calls out and prescribes a fix for), the plan doesn't
+  mention these two, but the risk category is identical and the same fix
+  applies: both are now given an explicit `= false` in-class initializer.
+  Effective default value is unchanged (both were `false` in every
+  practical build observed); only the UB is removed.
+- `NpTsdfServer::computeNormalImage()`'s dead `if (v == height_)` branch
+  (already documented in the plan's §8.14 as a known upstream issue) is
+  left exactly as-is, with a code comment pointing back to the plan.
+- Per the plan's explicit instruction, `width_`, `height_`, `vx_`, `fx_`
+  are now initialized to `0` in the header, and
+  `getServerConfigFromRosParam()` logs `RCLCPP_ERROR` if `width_ <= 0 ||
+  height_ <= 0` after loading params -- behavior (range-image
+  preprocessing silently producing garbage if these are missing) is
+  otherwise unchanged, only the initial-read UB and the missing-params
+  case are now diagnosable.
+
+**Acceptance (plan §6 Phase 6):** both executables build (0 errors). `ros2
+run voxfield_ros np_tsdf_server --ros-args -p width:=1024 -p height:=64 -p
+sensor_is_lidar:=true -p fov_up:=3.0 -p fov_down:=-25.0` starts without
+exceptions; `ros2 node info /voxfield` shows exactly the §3.4 topic/service
+set (`~/mesh`, `~/surface_pointcloud`, `~/tsdf_pointcloud`, `~/gsdf_pointcloud`,
+`~/tsdf_slice`, `~/gsdf_slice`, `~/occupied_nodes`, `~/tsdf_map_out`,
+`~/Robot_model`; `pointcloud`, `~/tsdf_map_in` subscriptions; `~/clear_map`,
+`~/generate_mesh`, `~/save_map`, `~/load_map`, `~/publish_pointclouds`,
+`~/publish_map` services); `ros2 service call /voxfield/clear_map
+std_srvs/srv/Empty` returns. `tsdf_server` (default node name `voxblox`)
+also confirmed to start and run its `updateMeshEvent` timer without error.
+`test_param_utils` + `test_kindr_conversions` still pass (no infra
+regressions).
+
+## Phase 7: Derived servers and eval/tool executables
+
+Ported in the plan's prescribed order: `VoxfieldServer`, `VoxbloxServer`,
+`FiestaServer`, `VoxedtServer` (mirrored from `FiestaServer`, per the
+plan), `IntensityServer`, `SimulationServer`, then `voxblox_eval.cc`,
+`simulation_eval.cc`, `visualize_tsdf.cc` -- completing all 10
+`voxfield_ros` executables from plan §3.3. Each `*_server` follows the
+Phase 6 patterns (`"~/name"` private topics, D7 QoS, D8 timers via
+`rclcpp::create_timer`, `RCL_ROS_TIME` stamps, `publishPclCloud()` for
+every `pcl::PointCloud<T>` that used to publish directly via `pcl_ros`).
+
+**`VoxedtServer` generated by mirroring `FiestaServer`** (plan's explicit
+suggestion): after porting `FiestaServer` by hand, `voxedt_server.{h,cc}`
+was produced with `sed` (class name swap, `EsdfOccFiestaIntegrator` ->
+`EsdfOccEdtIntegrator`, `getEsdfOccFiestaIntegratorConfigFromRosParam` ->
+`getEsdfEdtIntegratorConfigFromRosParam`), then hand-verified against a
+`diff` of the two ROS 1 originals to confirm nothing else differs. Two
+mechanical artifacts from the substitution were caught and fixed: a
+duplicated `#include <voxfield/integrator/esdf_occ_edt_integrator.h>` (the
+file already included both fiesta and edt integrator headers; the
+class-name substitution turned the fiesta one into a second copy of the
+edt one), and one sed rule's output being re-matched by an earlier rule
+(`EsdfOccFiestaIntegrator` -> `EsdfOccEdtIntegrator` fired inside the
+longer identifier `getEsdfOccFiestaIntegratorConfigFromRosParam` before
+the intended whole-identifier replacement could match it, leaving
+`getEsdfOccEdtIntegratorConfigFromRosParam` -- not a real function --
+instead of the correct `getEsdfEdtIntegratorConfigFromRosParam`). Also
+corrected a stale `// ... via FIESTA` comment carried over into
+`voxedt_server.cc` from the original (pre-existing upstream copy-paste
+leftover, zero behavior impact, fixed as a comment-only change).
+
+**Found and fixed (toolchain-only, an ODR bug only reachable once Phase 7
+links two independent translation units together):** `voxfield` core's
+`SimulationWorld::setVoxel<TsdfVoxel>`/`setVoxel<EsdfVoxel>` -- full
+template specializations -- are defined in the header
+`simulation/simulation_world_inl.h` without `inline`. A full specialization
+is an ordinary (non-template) definition for ODR purposes, so this is only
+safe if at most one translation union in a given link both includes the
+header. That held throughout Phase 3-6 (only `simulation_server.cc`
+included it), but `simulation_eval.cc` also includes
+`voxfield_ros/simulation_server.h` (for its `SimulationServerImpl`
+subclass) and gets linked into the same `simulation_eval` executable as
+`libvoxfield_ros.a` (which already contains `simulation_server.cc.o`) --
+hence `ld: multiple definition of ... setVoxel<...>`. Fixed by marking both
+specializations `inline`; this is the same category of latent,
+toolchain-exposed bug as the Phase 6 `mesh_vis.h` ambiguous-overload fix,
+not a rename or behavior change.
+
+**Found and fixed (Phase 1 rename-script artifact, not a Phase 7
+regression, but only just discovered here):** `voxblox_server.h`'s include
+guard was `VOXFIELD_ROS_VOXFIELD_SERVER_H_` -- byte-identical to
+`voxfield_server.h`'s own guard. Root cause: Phase 1's blanket `\bVOXBLOX_`
+-> `VOXFIELD_` substitution (per D1's include-guard rule) also matched the
+"VOXBLOX_SERVER" portion of the original `VOXBLOX_ROS_VOXBLOX_SERVER_H_`
+guard (which names the *file*, not just the package), even though D1
+explicitly keeps `VoxbloxServer`/`voxblox_server.{h,cc}` unrenamed (they
+name the method, not the project). The two files were never included
+together in the same translation unit before now, so the collision was
+silent; Phase 1's grep audit couldn't have caught it either, since neither
+resulting guard string contains the literal substring "voxblox" anymore.
+Fixed by renaming `voxblox_server.h`'s guard to
+`VOXFIELD_ROS_VOXBLOX_SERVER_H_` (prefix renamed per D1, "VOXBLOX_SERVER"
+kept per the do-not-rename list -- consistent with every other identifier
+in that file).
+
+**Dead code kept faithfully (not cleaned up, per behavior-preservation):**
+`VoxfieldServer::generateEsdfCallback()` and `VoxbloxServer::
+generateEsdfCallback()` are both declared and (for `Voxblox`Server) even
+defined, with a `generate_esdf_srv_` member declared alongside, but
+neither is ever bound to an actual service in `setupRos()` in either ROS 1
+class -- both are unreachable via ROS, only callable from C++ code that
+holds the object directly. Ported with the same shape (ROS 2 service
+callback signature, still unbound) rather than either wiring them up (a
+behavior change) or deleting them (also a behavior/API change for anyone
+using these classes as a library).
+
+**Acceptance (plan §6 Phase 7):** all 10 executables build with 0 errors,
+confirmed via a full clean rebuild (`rm -rf build install log`) in both
+`scripts/clean_env.sh` and the user's normal shell with the Hector
+underlay sourced (`ros2 pkg list` shows both `voxblox*` and `voxfield*`
+packages simultaneously; a live `voxfield_server` run under that shell
+starts and runs its mesh-update timer without error, confirming no Ogre/
+symbol/param clashes at runtime, not just at link time). `colcon
+test-result --verbose`: 65/65 tests, 0 failures. `ros2 run voxfield_ros
+simulation_eval` runs to completion -- publishes GT/test clouds, prints
+`TSDF RMSE: ... ESDF RMSE: ...` and the mesh timing table, then blocks in
+`rclcpp::spin()` exactly as the ROS 1 original did (matches "Done." log
+line before spinning). Each of `voxfield_server`, `voxblox_server`,
+`fiesta_server`, `voxedt_server`, `intensity_server` starts and holds its
+`updateMeshEvent`/`updateEsdfEvent` timer loop for several ticks with no
+errors in the log. `voxfield_server`'s full `ros2 node info` output
+(publishers, subscriptions, services) matches plan §3.4 exactly, including
+the ESDF-specific topics (`~/esdf_pointcloud`, `~/esdf_slice`, `~/
+esdf_map_out`, `~/esdf_map_in`, `~/save_esdf_map`) layered on top of the
+Phase 6 NpTsdfServer set; a live `~/clear_map` service call returns.
