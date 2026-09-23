@@ -49,6 +49,63 @@ If a separate `voxblox` ROS 2 install is also sourced in your shell (e.g. from a
 - To run the ESDF mapping of EDT, use the executables: ```voxedt_server```.
 - List of the ros services can be found [here](https://voxblox.readthedocs.io/en/latest/pages/The-Voxblox-Node.html), which should be the same as Voxblox.
 
+## ROS interface
+
+Topic/service names below are relative to the node (`~` = node-private); this repo's launch files all name the node `voxfield_node`, so e.g. `~/mesh` is `/voxfield_node/mesh`. Not every server exposes every topic below — the "Servers" column says which do. All servers accept the same `pointcloud`/`transform` input shape; what differs is which outputs they produce (ESDF-capable servers add `~/esdf_*`, FIESTA/EDT add occupancy-map saving, etc).
+
+### Input
+
+| Topic/service | Type | Servers | Notes |
+|---|---|---|---|
+| `pointcloud` | `sensor_msgs/msg/PointCloud2` | all | The sensor data to integrate. Remap this to your sensor's topic. |
+| `freespace_pointcloud` | `sensor_msgs/msg/PointCloud2` | all | Optional; only subscribed if `use_freespace_pointcloud: true`. |
+| `transform` | `geometry_msgs/msg/TransformStamped` | all | Only subscribed if `use_tf_transforms: false` (e.g. the `cow`/`vicon` presets); otherwise pose comes from TF. Queued and interpolated between samples, not just exact-matched. |
+| `~/intensity_image` | `sensor_msgs/msg/Image` | `intensity_server` | Via `cv_bridge`. |
+| `~/tsdf_map_in` | `voxfield_msgs/msg/Layer` | all | Merge in an externally-published TSDF layer. |
+| `~/esdf_map_in` | `voxfield_msgs/msg/Layer` | ESDF-capable | Merge in an externally-published ESDF layer. |
+
+**Pose:** by default (`use_tf_transforms: true`), looked up via `tf2_ros::Buffer` as `world_frame ← sensor_frame` (both ROS params) at each point cloud's timestamp — so `/tf`/`/tf_static` (or a bag played with `--clock`) must actually carry that transform. With `use_tf_transforms: false`, poses instead come from the `transform` topic above.
+
+### Output
+
+| Topic | Type | Servers | Contents |
+|---|---|---|---|
+| `~/mesh` | `voxfield_msgs/msg/Mesh` (latched) | all | The incremental reconstructed surface mesh. View live in RViz2 via `voxfield_rviz_plugin/VoxfieldMesh` (see `cfg/rviz/*.rviz`). |
+| `~/surface_pointcloud` | `sensor_msgs/msg/PointCloud2` | all | Points on the reconstructed surface. |
+| `~/tsdf_pointcloud` | `sensor_msgs/msg/PointCloud2` (`pcl::PointXYZI`) | all | Full TSDF; `intensity` = signed distance at that voxel. |
+| `~/gsdf_pointcloud` | `sensor_msgs/msg/PointCloud2` (`pcl::PointXYZI`) | `np_tsdf_server`, `voxfield_server` | Signed distance gradient field. |
+| `~/esdf_pointcloud` | `sensor_msgs/msg/PointCloud2` (`pcl::PointXYZI`) | ESDF-capable | Full ESDF; `intensity` = Euclidean signed distance. |
+| `~/tsdf_slice` / `~/gsdf_slice` / `~/esdf_slice` / `~/esdf_error_slice` | `sensor_msgs/msg/PointCloud2` (`pcl::PointXYZI`) | as above | Same `PointXYZI` shape as their full-volume counterparts, but just one horizontal slice at `slice_level` (cheap top-down view). |
+| `~/occupied_nodes` | `visualization_msgs/msg/MarkerArray` | all | Occupied voxels as cube markers. |
+| `~/traversable` | `sensor_msgs/msg/PointCloud2` | ESDF-capable | Voxels with ESDF distance ≥ `traversability_radius` (only published if `publish_traversable: true`). |
+| `~/Robot_model` | `visualization_msgs/msg/Marker` | all | `MESH_RESOURCE` marker at the current sensor pose, pointing at `robot_model_file`. |
+| `~/tsdf_map_out` | `voxfield_msgs/msg/Layer` | all | Raw TSDF voxel layer (for another node to consume, not for viewing — see below). |
+| `~/esdf_map_out` | `voxfield_msgs/msg/Layer` | ESDF-capable | Raw ESDF voxel layer. |
+| `~/icp_transform` | `geometry_msgs/msg/TransformStamped` (latched) | all | ICP correction; only published if `enable_icp: true`. Also broadcast on `/tf`. |
+| `~/intensity_pointcloud` / `~/intensity_mesh` | `sensor_msgs/msg/PointCloud2` / `voxfield_msgs/msg/Mesh` | `intensity_server` | Colored by intensity instead of geometry. |
+
+`~/tsdf_map_out`/`~/esdf_map_out` and their `_in` counterparts carry the **raw voxel grid** (`Block[]`, each voxel packed as `uint32[]`), not a point cloud — that's how two nodes share a live map (e.g. a planner subscribing to the mapper's output). The `~/*_pointcloud`/`~/*_slice` topics are the human/RViz-facing view of the same data, resampled into `PointXYZI`.
+
+### Services
+
+| Service | Type | Servers | Effect |
+|---|---|---|---|
+| `~/generate_mesh` | `std_srvs/srv/Empty` | all | Force a full mesh regeneration. If the `mesh_filename` param is set, also writes an ASCII PLY to that path. |
+| `~/clear_map` | `std_srvs/srv/Empty` | all | Clear the whole map. |
+| `~/save_map` / `~/load_map` | `voxfield_msgs/srv/FilePath` | all | Save/load the TSDF layer as a binary file (`voxfield_server` also saves/loads its ESDF layer in the same file — see the known-issue note below). |
+| `~/save_esdf_map` | `voxfield_msgs/srv/FilePath` | `voxfield_server`, `voxblox_server` | Save just the ESDF layer. |
+| `~/save_occ_map` / `~/save_all_map` | `voxfield_msgs/srv/FilePath` | `fiesta_server`, `voxedt_server` | Save the occupancy layer / everything. |
+| `~/publish_pointclouds` | `std_srvs/srv/Empty` | all | Force-publish every pointcloud output once, bypassing the `publish_pointclouds`/`publish_slices` param gating. |
+| `~/publish_map` | `std_srvs/srv/Empty` | all | Force-publish `~/tsdf_map_out`/`~/esdf_map_out` once. |
+
+`FilePath`'s request is just `string file_path`; the response is empty (ROS 2 has no service-call failure channel, so a failed save/load logs `RCLCPP_ERROR` rather than returning an error to the caller — check the node's log, not the response).
+
+### On-disk map file format
+
+`~/save_map`/`~/save_esdf_map`/`~/save_occ_map`/`~/save_all_map` all write the same binary protobuf layer format (`voxfield::io::SaveLayer`) — the on-disk equivalent of a `voxfield_msgs/msg/Layer`, not a point cloud or mesh. No extension is enforced by the code; this repo's launch/eval files use `.tsdf`/`.esdf`/`.occ`/`.vxblx` by convention. These files are wire-compatible with maps saved by the original ROS 1 Voxblox/Voxfield (see `docs/ROS2_PORT_NOTES.md` for the compatibility check and a note on a pre-existing upstream bug in `voxfield_server`'s combined TSDF+ESDF save/load).
+
+`~/generate_mesh` (with `mesh_filename` set) instead writes an **ASCII PLY** (`element vertex`/`element face`, `x y z normal_x normal_y normal_z red green blue alpha` per vertex) — a normal, tool-readable mesh file, unlike the protobuf map files above.
+
 ## Example Usage
 
 The datasets below were recorded as ROS 1 bags. Convert one to a ROS 2 bag first with [`rosbags`](https://gitlab.com/ternaris/rosbags) (`pip install --user rosbags`):
