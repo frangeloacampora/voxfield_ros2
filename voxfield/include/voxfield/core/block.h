@@ -7,8 +7,8 @@
 #include <memory>
 #include <vector>
 
-${1}voxfield/Block.pb.h"
-${1}voxfield/core/common.h"
+#include "voxfield/Block.pb.h"
+#include "voxfield/core/common.h"
 
 namespace voxfield {
 
@@ -239,6 +239,6 @@ class Block {
 
 }  // namespace voxfield
 
-${1}voxfield/core/block_inl.h"
+#include "voxfield/core/block_inl.h"
 
 #endif  // VOXFIELD_CORE_BLOCK_H_

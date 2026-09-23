@@ -2,7 +2,7 @@
 #include <eigen-checks/gtest.h>
 #include <gtest/gtest.h>
 
-${1}voxfield/core/tsdf_map.h"
+#include "voxfield/core/tsdf_map.h"
 
 using namespace voxfield;  // NOLINT
 

@@ -3,8 +3,8 @@
 
 #include <gtest/gtest.h>
 
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
 
 namespace voxfield {
 

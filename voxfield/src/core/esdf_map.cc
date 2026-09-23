@@ -1,4 +1,4 @@
-${1}voxfield/core/esdf_map.h"
+#include "voxfield/core/esdf_map.h"
 
 namespace voxfield {
 

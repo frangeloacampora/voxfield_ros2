@@ -1,8 +1,8 @@
-${1}voxfield/utils/voxel_utils.h"
+#include "voxfield/utils/voxel_utils.h"
 
-${1}voxfield/core/color.h"
-${1}voxfield/core/common.h"
-${1}voxfield/core/voxel.h"
+#include "voxfield/core/color.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/voxel.h"
 
 namespace voxfield {
 

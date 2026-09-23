@@ -11,9 +11,9 @@
 #include <Eigen/Core>
 #include <glog/logging.h>
 
-${1}voxfield/core/block_hash.h"
-${1}voxfield/core/common.h"
-${1}voxfield/utils/timing.h"
+#include "voxfield/core/block_hash.h"
+#include "voxfield/core/common.h"
+#include "voxfield/utils/timing.h"
 
 namespace voxfield {
 

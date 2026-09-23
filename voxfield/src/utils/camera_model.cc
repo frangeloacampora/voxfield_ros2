@@ -1,4 +1,4 @@
-${1}voxfield/utils/camera_model.h"
+#include "voxfield/utils/camera_model.h"
 
 namespace voxfield {
 

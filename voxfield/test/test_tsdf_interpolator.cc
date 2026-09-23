@@ -2,11 +2,11 @@
 #include <eigen-checks/gtest.h>
 #include <gtest/gtest.h>
 
-// ${1}voxfield/core/tsdf_map.h"
-${1}voxfield/core/common.h"
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
-${1}voxfield/interpolator/interpolator.h"
+// #include "voxfield/core/tsdf_map.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
+#include "voxfield/interpolator/interpolator.h"
 
 using namespace voxfield;  // NOLINT
 

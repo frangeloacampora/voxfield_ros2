@@ -6,8 +6,8 @@
 #include <float.h>
 #include <string>
 
-${1}voxfield/core/color.h"
-${1}voxfield/core/common.h"
+#include "voxfield/core/color.h"
+#include "voxfield/core/common.h"
 
 namespace voxfield {
 

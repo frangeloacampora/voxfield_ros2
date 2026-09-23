@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-${1}voxfield/io/mesh_ply.h"
+#include "voxfield/io/mesh_ply.h"
 
 namespace voxfield {
 

@@ -1,8 +1,8 @@
 #ifndef VOXFIELD_UTILS_PLANNING_UTILS_H_
 #define VOXFIELD_UTILS_PLANNING_UTILS_H_
 
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
 
 namespace voxfield {
 
@@ -48,6 +48,6 @@ void computeMapBoundsFromLayer(
 }  // namespace utils
 }  // namespace voxfield
 
-${1}voxfield/utils/planning_utils_inl.h"
+#include "voxfield/utils/planning_utils_inl.h"
 
 #endif  // VOXFIELD_UTILS_PLANNING_UTILS_H_

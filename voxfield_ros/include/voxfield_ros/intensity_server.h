@@ -6,9 +6,9 @@
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/Image.h>
 
-${1}voxfield/core/voxel.h>
-${1}voxfield/integrator/intensity_integrator.h>
-${1}voxfield/utils/color_maps.h>
+#include <voxfield/core/voxel.h>
+#include <voxfield/integrator/intensity_integrator.h>
+#include <voxfield/utils/color_maps.h>
 
 #include "voxfield_ros/intensity_vis.h"
 #include "voxfield_ros/tsdf_server.h"

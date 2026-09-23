@@ -1,6 +1,6 @@
-${1}voxfield/core/block.h"
+#include "voxfield/core/block.h"
 
-${1}voxfield/core/voxel.h"
+#include "voxfield/core/voxel.h"
 
 namespace voxfield {
 

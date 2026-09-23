@@ -7,7 +7,7 @@
 
 #include <OGRE/OgreManualObject.h>
 
-${1}voxfield/core/block_hash.h>
+#include <voxfield/core/block_hash.h>
 #include <voxfield_msgs/Mesh.h>
 #include <voxfield_msgs/MultiMesh.h>
 

@@ -4,11 +4,11 @@
 #include <algorithm>
 #include <string>
 
-${1}voxfield/core/layer.h"
-${1}voxfield/io/mesh_ply.h"
-${1}voxfield/mesh/mesh.h"
-${1}voxfield/mesh/mesh_integrator.h"
-${1}voxfield/mesh/mesh_layer.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/io/mesh_ply.h"
+#include "voxfield/mesh/mesh.h"
+#include "voxfield/mesh/mesh_integrator.h"
+#include "voxfield/mesh/mesh_layer.h"
 
 namespace voxfield {
 

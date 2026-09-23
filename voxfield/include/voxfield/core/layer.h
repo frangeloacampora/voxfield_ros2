@@ -7,12 +7,12 @@
 
 #include <glog/logging.h>
 
-${1}voxfield/Block.pb.h"
-${1}voxfield/Layer.pb.h"
-${1}voxfield/core/block.h"
-${1}voxfield/core/block_hash.h"
-${1}voxfield/core/common.h"
-${1}voxfield/core/voxel.h"
+#include "voxfield/Block.pb.h"
+#include "voxfield/Layer.pb.h"
+#include "voxfield/core/block.h"
+#include "voxfield/core/block_hash.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/voxel.h"
 
 namespace voxfield {
 
@@ -316,6 +316,6 @@ class Layer {
 
 }  // namespace voxfield
 
-${1}voxfield/core/layer_inl.h"
+#include "voxfield/core/layer_inl.h"
 
 #endif  // VOXFIELD_CORE_LAYER_H_

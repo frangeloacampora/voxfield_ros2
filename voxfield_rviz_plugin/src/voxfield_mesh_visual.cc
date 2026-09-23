@@ -5,7 +5,7 @@
 #include <OGRE/OgreSceneManager.h>
 #include <OGRE/OgreSceneNode.h>
 
-${1}voxfield/mesh/mesh_utils.h>
+#include <voxfield/mesh/mesh_utils.h>
 
 namespace voxfield_rviz_plugin {
 

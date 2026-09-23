@@ -9,10 +9,10 @@
 #include <pcl_ros/point_cloud.h>
 #include <std_msgs/ColorRGBA.h>
 
-${1}voxfield/core/common.h>
-${1}voxfield/core/layer.h>
-${1}voxfield/mesh/mesh.h>
-${1}voxfield/utils/color_maps.h>
+#include <voxfield/core/common.h>
+#include <voxfield/core/layer.h>
+#include <voxfield/mesh/mesh.h>
+#include <voxfield/utils/color_maps.h>
 #include <voxfield_msgs/Layer.h>
 
 namespace voxfield {

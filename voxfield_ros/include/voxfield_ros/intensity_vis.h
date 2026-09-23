@@ -3,7 +3,7 @@
 
 #include <memory>
 
-${1}voxfield/utils/color_maps.h>
+#include <voxfield/utils/color_maps.h>
 #include <voxfield_msgs/Mesh.h>
 
 #include "voxfield_ros/conversions.h"

@@ -27,7 +27,7 @@
 #include <iostream>
 #include <string>
 
-${1}voxfield/mesh/mesh_layer.h"
+#include "voxfield/mesh/mesh_layer.h"
 
 namespace voxfield {
 

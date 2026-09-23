@@ -1,4 +1,4 @@
-${1}voxfield/integrator/esdf_occ_fiesta_integrator.h"
+#include "voxfield/integrator/esdf_occ_fiesta_integrator.h"
 
 // marco settings, it's better to avoid them
 // Use 24 neighborhood by default (according to FIESTA's paper)

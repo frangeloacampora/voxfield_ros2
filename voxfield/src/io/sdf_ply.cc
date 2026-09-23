@@ -1,4 +1,4 @@
-${1}voxfield/io/sdf_ply.h"
+#include "voxfield/io/sdf_ply.h"
 
 #include <algorithm>
 

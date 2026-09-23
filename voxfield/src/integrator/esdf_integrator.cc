@@ -1,6 +1,6 @@
-${1}voxfield/integrator/esdf_integrator.h"
+#include "voxfield/integrator/esdf_integrator.h"
 
-${1}voxfield/utils/planning_utils.h"
+#include "voxfield/utils/planning_utils.h"
 
 namespace voxfield {
 

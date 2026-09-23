@@ -2,15 +2,15 @@
 
 #include <ros/ros.h>
 
-${1}voxfield/core/esdf_map.h>
-${1}voxfield/core/tsdf_map.h>
-${1}voxfield/integrator/esdf_integrator.h>
-${1}voxfield/integrator/esdf_occ_integrator.h>
-${1}voxfield/integrator/occupancy_integrator.h>
-${1}voxfield/integrator/tsdf_integrator.h>
-${1}voxfield/mesh/mesh_integrator.h>
-${1}voxfield/simulation/simulation_world.h>
-${1}voxfield/utils/evaluation_utils.h>
+#include <voxfield/core/esdf_map.h>
+#include <voxfield/core/tsdf_map.h>
+#include <voxfield/integrator/esdf_integrator.h>
+#include <voxfield/integrator/esdf_occ_integrator.h>
+#include <voxfield/integrator/occupancy_integrator.h>
+#include <voxfield/integrator/tsdf_integrator.h>
+#include <voxfield/mesh/mesh_integrator.h>
+#include <voxfield/simulation/simulation_world.h>
+#include <voxfield/utils/evaluation_utils.h>
 
 #include "voxfield_ros/conversions.h"
 #include "voxfield_ros/mesh_vis.h"

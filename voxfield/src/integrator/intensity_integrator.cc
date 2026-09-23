@@ -1,6 +1,6 @@
-${1}voxfield/integrator/intensity_integrator.h"
+#include "voxfield/integrator/intensity_integrator.h"
 
-${1}voxfield/utils/distance_utils.h"
+#include "voxfield/utils/distance_utils.h"
 
 namespace voxfield {
 

@@ -5,8 +5,8 @@
 
 #include <glog/logging.h>
 
-${1}voxfield/core/common.h"
-${1}voxfield/core/layer.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/layer.h"
 
 namespace voxfield {
 namespace io {
@@ -75,6 +75,6 @@ bool SaveLayerSubset(
 }  // namespace io
 }  // namespace voxfield
 
-${1}voxfield/io/layer_io_inl.h"
+#include "voxfield/io/layer_io_inl.h"
 
 #endif  // VOXFIELD_IO_LAYER_IO_H_

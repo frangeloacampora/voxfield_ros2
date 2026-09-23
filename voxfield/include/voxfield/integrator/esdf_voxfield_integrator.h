@@ -9,13 +9,13 @@
 #include <Eigen/Core>
 #include <glog/logging.h>
 
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
-${1}voxfield/integrator/integrator_utils.h"
-${1}voxfield/utils/bucket_queue.h"
-${1}voxfield/utils/neighbor_tools.h"
-${1}voxfield/utils/neighbor_tools_ex.h"
-${1}voxfield/utils/timing.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
+#include "voxfield/integrator/integrator_utils.h"
+#include "voxfield/utils/bucket_queue.h"
+#include "voxfield/utils/neighbor_tools.h"
+#include "voxfield/utils/neighbor_tools_ex.h"
+#include "voxfield/utils/timing.h"
 
 namespace voxfield {
 

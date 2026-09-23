@@ -1,4 +1,4 @@
-${1}voxfield/simulation/simulation_world.h"
+#include "voxfield/simulation/simulation_world.h"
 
 namespace voxfield {
 

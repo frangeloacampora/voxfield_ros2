@@ -6,7 +6,7 @@
 #include <geometry_msgs/TransformStamped.h>
 #include <tf/transform_listener.h>
 
-${1}voxfield/core/common.h>
+#include <voxfield/core/common.h>
 
 namespace voxfield {
 

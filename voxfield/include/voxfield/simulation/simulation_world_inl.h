@@ -5,8 +5,8 @@
 #include <iostream>
 #include <memory>
 
-${1}voxfield/core/block.h"
-${1}voxfield/utils/timing.h"
+#include "voxfield/core/block.h"
+#include "voxfield/utils/timing.h"
 
 namespace voxfield {
 

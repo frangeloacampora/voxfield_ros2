@@ -1,10 +1,10 @@
 #ifndef VOXFIELD_UTILS_DISTANCE_UTILS_H_
 #define VOXFIELD_UTILS_DISTANCE_UTILS_H_
 
-${1}voxfield/core/block.h"
-${1}voxfield/core/common.h"
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
+#include "voxfield/core/block.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
 
 namespace voxfield {
 

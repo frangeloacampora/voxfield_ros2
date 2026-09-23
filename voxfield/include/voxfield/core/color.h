@@ -1,7 +1,7 @@
 #ifndef VOXFIELD_CORE_COLOR_H_
 #define VOXFIELD_CORE_COLOR_H_
 
-${1}voxfield/core/common.h"
+#include "voxfield/core/common.h"
 
 namespace voxfield {
 

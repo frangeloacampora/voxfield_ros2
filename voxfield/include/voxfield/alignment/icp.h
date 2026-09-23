@@ -44,12 +44,12 @@
 #include <memory>
 #include <thread>
 
-${1}voxfield/core/block_hash.h"
-${1}voxfield/core/common.h"
-${1}voxfield/core/layer.h"
-${1}voxfield/integrator/integrator_utils.h"
-${1}voxfield/interpolator/interpolator.h"
-${1}voxfield/utils/approx_hash_array.h"
+#include "voxfield/core/block_hash.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/integrator/integrator_utils.h"
+#include "voxfield/interpolator/interpolator.h"
+#include "voxfield/utils/approx_hash_array.h"
 
 namespace voxfield {
 

@@ -26,7 +26,7 @@
 
 #include <glog/logging.h>
 
-${1}voxfield/utils/timing.h"
+#include "voxfield/utils/timing.h"
 
 namespace voxfield {
 

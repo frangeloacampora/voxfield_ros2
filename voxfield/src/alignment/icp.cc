@@ -37,7 +37,7 @@
  * $Id$
  *
  */
-${1}voxfield/alignment/icp.h"
+#include "voxfield/alignment/icp.h"
 
 #include <random>
 

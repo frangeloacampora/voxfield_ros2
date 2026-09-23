@@ -7,7 +7,7 @@
 
 #include <glog/logging.h>
 
-${1}voxfield/core/common.h"
+#include "voxfield/core/common.h"
 
 namespace voxfield {
 /**

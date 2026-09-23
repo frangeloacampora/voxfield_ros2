@@ -4,10 +4,10 @@
 #include <memory>
 #include <string>
 
-${1}voxfield/core/esdf_map.h>
-${1}voxfield/core/occupancy_map.h>  // ADD(py)
-${1}voxfield/integrator/esdf_integrator.h>
-${1}voxfield/integrator/occupancy_tsdf_integrator.h>  // ADD(py)
+#include <voxfield/core/esdf_map.h>
+#include <voxfield/core/occupancy_map.h>  // ADD(py)
+#include <voxfield/integrator/esdf_integrator.h>
+#include <voxfield/integrator/occupancy_tsdf_integrator.h>  // ADD(py)
 #include <voxfield_msgs/Layer.h>
 
 #include "voxfield_ros/tsdf_server.h"

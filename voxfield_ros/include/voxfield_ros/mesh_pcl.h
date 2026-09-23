@@ -32,8 +32,8 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl_ros/point_cloud.h>
 
-${1}voxfield/core/common.h>
-${1}voxfield/mesh/mesh_layer.h>
+#include <voxfield/core/common.h>
+#include <voxfield/mesh/mesh_layer.h>
 
 namespace voxfield {
 

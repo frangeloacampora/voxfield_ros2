@@ -28,7 +28,7 @@
 #include <string>
 #include <vector>
 
-${1}voxfield/core/common.h"
+#include "voxfield/core/common.h"
 
 namespace voxfield {
 

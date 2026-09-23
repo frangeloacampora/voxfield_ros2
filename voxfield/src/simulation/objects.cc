@@ -1,3 +1,3 @@
-${1}voxfield/simulation/objects.h"
+#include "voxfield/simulation/objects.h"
 
 namespace voxfield {}  // namespace voxfield

@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <vector>
 
-${1}voxfield/core/color.h"
-${1}voxfield/core/common.h"
+#include "voxfield/core/color.h"
+#include "voxfield/core/common.h"
 
 namespace voxfield {
 

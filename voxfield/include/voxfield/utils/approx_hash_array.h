@@ -5,7 +5,7 @@
 #include <limits>
 #include <vector>
 
-${1}voxfield/core/common.h"
+#include "voxfield/core/common.h"
 
 /**
  * These classes allocate a fixed size array and index it with a hash that is

@@ -1,18 +1,18 @@
 #include <gtest/gtest.h>
 
-${1}voxfield/Block.pb.h"
-${1}voxfield/Layer.pb.h"
-${1}voxfield/core/block.h"
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
-${1}voxfield/integrator/merge_integration.h"
-${1}voxfield/io/layer_io.h"
-${1}voxfield/io/mesh_ply.h"
-${1}voxfield/io/sdf_ply.h"
-${1}voxfield/simulation/simulation_world.h"
-${1}voxfield/test/layer_test_utils.h"
-${1}voxfield/utils/evaluation_utils.h"
-${1}voxfield/utils/layer_utils.h"
+#include "voxfield/Block.pb.h"
+#include "voxfield/Layer.pb.h"
+#include "voxfield/core/block.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
+#include "voxfield/integrator/merge_integration.h"
+#include "voxfield/io/layer_io.h"
+#include "voxfield/io/mesh_ply.h"
+#include "voxfield/io/sdf_ply.h"
+#include "voxfield/simulation/simulation_world.h"
+#include "voxfield/test/layer_test_utils.h"
+#include "voxfield/utils/evaluation_utils.h"
+#include "voxfield/utils/layer_utils.h"
 
 using namespace voxfield;  // NOLINT
 

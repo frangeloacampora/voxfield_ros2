@@ -1,4 +1,4 @@
-${1}voxfield/integrator/esdf_voxfield_integrator.h"
+#include "voxfield/integrator/esdf_voxfield_integrator.h"
 
 // marco settings, it's better to avoid them
 #define USE_24_NEIGHBOR

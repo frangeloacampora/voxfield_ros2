@@ -31,11 +31,11 @@
 #include <eigen_conversions/eigen_msg.h>
 #include <visualization_msgs/Marker.h>
 
-${1}voxfield/core/common.h>
-${1}voxfield/integrator/esdf_integrator.h>
-${1}voxfield/integrator/tsdf_integrator.h>
-${1}voxfield/mesh/mesh.h>
-${1}voxfield/mesh/mesh_layer.h>
+#include <voxfield/core/common.h>
+#include <voxfield/integrator/esdf_integrator.h>
+#include <voxfield/integrator/tsdf_integrator.h>
+#include <voxfield/mesh/mesh.h>
+#include <voxfield/mesh/mesh_layer.h>
 #include <voxfield_msgs/Mesh.h>
 
 #include "voxfield_ros/conversions.h"

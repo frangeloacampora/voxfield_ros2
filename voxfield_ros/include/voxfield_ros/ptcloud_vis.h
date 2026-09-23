@@ -10,9 +10,9 @@
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 
-${1}voxfield/core/common.h>
-${1}voxfield/core/layer.h>
-${1}voxfield/core/voxel.h>
+#include <voxfield/core/common.h>
+#include <voxfield/core/layer.h>
+#include <voxfield/core/voxel.h>
 
 #include "voxfield_ros/conversions.h"
 

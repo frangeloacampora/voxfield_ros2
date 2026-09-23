@@ -3,8 +3,8 @@
 
 #include <vector>
 
-${1}voxfield/core/common.h"
-${1}voxfield/core/layer.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/layer.h"
 
 namespace voxfield {
 

@@ -17,14 +17,14 @@
 #include <Eigen/Core>
 #include <glog/logging.h>
 
-${1}voxfield/core/block_hash.h"
-${1}voxfield/core/common.h"
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
-${1}voxfield/integrator/integrator_utils.h"
+#include "voxfield/core/block_hash.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
+#include "voxfield/integrator/integrator_utils.h"
 
-${1}voxfield/utils/approx_hash_array.h"
-${1}voxfield/utils/timing.h"
+#include "voxfield/utils/approx_hash_array.h"
+#include "voxfield/utils/timing.h"
 
 namespace voxfield {
 

@@ -28,7 +28,7 @@ A colcon workspace containing this repo builds cleanly on ROS 2 Jazzy and all un
 - Port all 4 packages to ROS 2: `voxfield` (core lib), `voxfield_msgs`, `voxfield_ros`, `voxfield_rviz_plugin`.
 - All executables listed in §3.3.
 - All `.launch` files → Python launch files (`.launch.py`).
-- The repo's shipped parameter/calibration YAML files (`voxfield_ros/cfg/param/*.yaml`, `cfg/calib/*.yaml`, etc., which come from upstream voxfield for its example datasets) → ROS 2 parameter-file format.
+- The repo's shipped parameter/calibration YAML files (`voxblox_ros/cfg/param/*.yaml`, `cfg/calib/*.yaml`, etc., which come from upstream voxfield for its example datasets) → ROS 2 parameter-file format.
 - All `.rviz` configs → RViz2 format.
 - Unit tests (gtest) for the core library.
 - A launch-based smoke test that runs without any dataset.
@@ -37,7 +37,7 @@ A colcon workspace containing this repo builds cleanly on ROS 2 Jazzy and all un
 ### 1.3 Out of scope (non-goals)
 - ROS 1 compatibility. The repo becomes ROS 2-only; ROS 1 lives in git history.
 - Algorithm changes, performance tuning, new features.
-- Drop-in source compatibility with downstream voxblox users (Cblox, Voxgraph, Kimera, Panmap). After the rename, those projects need their includes and namespace adapted to use voxfield. Note this in the README. Do **not** add a `namespace voxfield = voxfield;` alias: it would reintroduce the clash the rename exists to avoid.
+- Drop-in source compatibility with downstream voxblox users (Cblox, Voxgraph, Kimera, Panmap). After the rename, those projects need their includes and namespace adapted to use voxfield. Note this in the README. Do **not** add a `namespace voxblox = voxfield;` alias: it would reintroduce the clash the rename exists to avoid.
 - Python protobuf generation (the old `PROTOBUF_COMPILE_PYTHON` flag); nothing in this repo uses it.
 - Composable nodes/components. This is an optional stretch goal (§10), only after everything else is done.
 - The `stereo_image_proc` / `image_undistort` / `dense_stereo` pipelines referenced in commented-out or `bak/` launch files. Port only what's needed for LiDAR/RGB-D point cloud input.
@@ -62,7 +62,7 @@ A colcon workspace containing this repo builds cleanly on ROS 2 Jazzy and all un
 ### 2.1 A separate voxblox install is on this machine (why the rename matters)
 The user's `~/.zshrc` sources `/opt/ros/jazzy` **and** `~/src/hector/install/setup.zsh`, which chains `/opt/hector/jazzy`. That underlay comes from apt packages `hector-jazzy-*` (`deb.teamhector.de`), installed as dependencies of other Hector work. The user does **not** use its voxblox packages, but because it's sourced, they are visible in every shell. It provides:
 
-`minkindr`, `minkindr_conversions`, `voxblox`, `voxblox_proto`, `voxfield_msgs`, `voxfield_ros`, `voxfield_rviz_plugin`
+`minkindr`, `minkindr_conversions`, `voxblox`, `voxblox_proto`, `voxblox_msgs`, `voxblox_ros`, `voxblox_rviz_plugin`
 
 (They are built from `https://github.com/tu-darmstadt-ros-pkg/voxblox_ros2`, branch `ros2`: a ROS 2 port of *upstream voxblox*, not voxfield.)
 
@@ -77,7 +77,7 @@ With the voxfield rename (§4 D1), none of this repo's packages, headers, namesp
   ```
 - Never add a dependency on any `/opt/hector` package.
 
-The Hector port is still a **useful reference implementation** for the mechanical ROS 1 → ROS 2 API translation. Its installed headers are readable under `/opt/hector/jazzy/include/voxfield_ros/` (e.g. `ros_parameters.hpp`, `transformer.h`, `tsdf_server.h`, `node_helper.h`). Read it for patterns; **do not depend on it or copy it blindly**. It lacks voxfield's NP-TSDF/Voxfield/FIESTA/EDT servers, `MultiMesh.msg` and `LayerWithTrajectory.msg`, and it uses a strict `declare_parameter<T>` style that breaks on this repo's YAML (see D6).
+The Hector port is still a **useful reference implementation** for the mechanical ROS 1 → ROS 2 API translation. Its installed headers are readable under `/opt/hector/jazzy/include/voxblox_ros/` (e.g. `ros_parameters.hpp`, `transformer.h`, `tsdf_server.h`, `node_helper.h`). Read it for patterns; **do not depend on it or copy it blindly**. It lacks voxfield's NP-TSDF/Voxfield/FIESTA/EDT servers, `MultiMesh.msg` and `LayerWithTrajectory.msg`, and it uses a strict `declare_parameter<T>` style that breaks on this repo's YAML (see D6).
 
 ---
 
@@ -87,14 +87,14 @@ The Hector port is still a **useful reference implementation** for the mechanica
 | Current package | New name | Build | ROS 1 deps | Notes |
 |---|---|---|---|---|
 | `voxblox` | `voxfield` | catkin_simple | `eigen_catkin`, `eigen_checks`, `gflags_catkin`, `glog_catkin`, `minkindr`, `protobuf_catkin` | Pure C++ core lib. The ROS 1 build is only in CMake/package.xml. Protobuf generated via `PROTOBUF_CATKIN_GENERATE_CPP2`. 10 gtests + 2 tool binaries. |
-| `voxfield_msgs` | `voxfield_msgs` | catkin_simple | `std_msgs`, `nav_msgs` | 7 msgs (`Block`, `Layer`, `LayerWithTrajectory`, `Mesh`, `MeshBlock`, `MultiMesh`, `VoxelEvaluationDetails`), 1 srv (`FilePath`). |
-| `voxfield_ros` | `voxfield_ros` | catkin_simple | `cv_bridge`, `gflags_catkin`, `interactive_markers`, `minkindr_conversions`, `pcl_conversions`, `pcl_ros`, `sensor_msgs`, `tf`, `voxblox`, `voxfield_msgs`, `voxfield_rviz_plugin` | ~9.7k LOC, all ROS-coupled. |
-| `voxfield_rviz_plugin` | `voxfield_rviz_plugin` | catkin_simple | `rviz` (Qt5/Ogre1) | `VoxfieldMesh` and `VoxfieldMultiMesh` displays. |
+| `voxblox_msgs` | `voxfield_msgs` | catkin_simple | `std_msgs`, `nav_msgs` | 7 msgs (`Block`, `Layer`, `LayerWithTrajectory`, `Mesh`, `MeshBlock`, `MultiMesh`, `VoxelEvaluationDetails`), 1 srv (`FilePath`). |
+| `voxblox_ros` | `voxfield_ros` | catkin_simple | `cv_bridge`, `gflags_catkin`, `interactive_markers`, `minkindr_conversions`, `pcl_conversions`, `pcl_ros`, `sensor_msgs`, `tf`, `voxblox`, `voxblox_msgs`, `voxblox_rviz_plugin` | ~9.7k LOC, all ROS-coupled. |
+| `voxblox_rviz_plugin` | `voxfield_rviz_plugin` | catkin_simple | `rviz` (Qt5/Ogre1) | `VoxbloxMesh` and `VoxbloxMultiMesh` displays. |
 
 External source deps pulled via `voxfield_*.rosinstall`: `catkin_simple`, `eigen_catkin`, `eigen_checks`, `gflags_catkin`, `glog_catkin`, `minkindr`, `minkindr_ros`, `protobuf_catkin`. **All of these go away** (see D3/D4).
 
-### 3.2 `voxfield_ros` files and their ROS coupling
-Headers (`include/voxfield_ros/`): `conversions.h`, `conversions_inl.h`, `fiesta_server.h`, `intensity_server.h`, `intensity_vis.h`, `interactive_slider.h`, `mesh_pcl.h`, `mesh_vis.h`, `np_tsdf_server.h`, `ptcloud_vis.h`, `ros_params.h` (15 `get*ConfigFromRosParam` functions, ~93 `param()` calls), `simulation_server.h`, `transformer.h`, `tsdf_server.h`, `voxblox_server.h`, `voxedt_server.h`, `voxfield_server.h`.
+### 3.2 `voxblox_ros` files and their ROS coupling
+Headers (`include/voxblox_ros/`): `conversions.h`, `conversions_inl.h`, `fiesta_server.h`, `intensity_server.h`, `intensity_vis.h`, `interactive_slider.h`, `mesh_pcl.h`, `mesh_vis.h`, `np_tsdf_server.h`, `ptcloud_vis.h`, `ros_params.h` (15 `get*ConfigFromRosParam` functions, ~93 `param()` calls), `simulation_server.h`, `transformer.h`, `tsdf_server.h`, `voxblox_server.h`, `voxedt_server.h`, `voxfield_server.h`.
 
 Sources (`src/`): `fiesta_server.cc`, `intensity_server.cc`, `interactive_slider.cc`, `np_tsdf_server.cc`, `simulation_server.cc`, `transformer.cc`, `tsdf_server.cc`, `voxblox_server.cc`, `voxedt_server.cc`, `voxfield_server.cc`, plus mains `*_server_node.cc` ×7, `voxblox_eval.cc`, `simulation_eval.cc`, `visualize_tsdf.cc`.
 
@@ -138,7 +138,7 @@ Derived by grepping `advertise`/`subscribe`/`advertiseService`. **Re-verify with
 - **Services (private):** `~generate_mesh`, `~clear_map` (std_srvs/Empty); `~save_map`, `~load_map`, `~save_esdf_map`, `~save_occ_map`, `~save_all_map` (FilePath srv); `~publish_pointclouds`, `~publish_map` (Empty).
 - **TF:** looks up `world_frame ← sensor_frame` (or the message frame); broadcasts `icp_corrected` / `pose_corrected` when ICP is enabled.
 
-Note that the message **types** change (`voxfield_msgs/Mesh` → `voxfield_msgs/msg/Mesh`), while the topic **names** don't.
+Note that the message **types** change (`voxblox_msgs/Mesh` → `voxfield_msgs/msg/Mesh`), while the topic **names** don't.
 
 ---
 
@@ -149,21 +149,21 @@ Note that the message **types** change (`voxfield_msgs/Mesh` → `voxfield_msgs/
 | Kind | From | To |
 |---|---|---|
 | Package / dir | `voxblox/` | `voxfield/` |
-| Package / dir | `voxfield_msgs/` | `voxfield_msgs/` |
-| Package / dir | `voxfield_ros/` | `voxfield_ros/` |
-| Package / dir | `voxfield_rviz_plugin/` | `voxfield_rviz_plugin/` |
-| Include root | `voxblox/include/voxblox/…` → `${1}voxfield/core/…>` | `voxfield/include/voxfield/…` → `#include <voxfield/core/…>` |
-| Include root | `include/voxfield_ros/…`, `"voxfield_ros/…"` | `include/voxfield_ros/…`, `"voxfield_ros/…"` |
-| Include root | `include/voxfield_rviz_plugin/…` | `include/voxfield_rviz_plugin/…` |
-| C++ namespace | `namespace voxfield`, `voxfield::` | `namespace voxfield`, `voxfield::` |
-| C++ namespace | `namespace voxfield_rviz_plugin` | `namespace voxfield_rviz_plugin` |
-| Include guards | `VOXFIELD_…_H_`, `VOXFIELD_ROS_…`, `VOXFIELD_RVIZ_PLUGIN_…` | `VOXFIELD_…_H_`, `VOXFIELD_ROS_…`, `VOXFIELD_RVIZ_PLUGIN_…` |
-| Protobuf | `proto/voxfield/*.proto`, `package voxfield;`, `"voxblox/Block.pb.h"` | `proto/voxfield/*.proto`, `package voxfield;`, `"voxfield/Block.pb.h"` |
-| Messages | `voxfield_msgs::…` / `voxfield_msgs/…` | `voxfield_msgs::msg::…` / `voxfield_msgs/msg/…` |
-| RViz plugin classes | `VoxfieldMeshDisplay`, `VoxfieldMultiMeshDisplay`, `VoxfieldMeshVisual` | `VoxfieldMeshDisplay`, `VoxfieldMultiMeshDisplay`, `VoxfieldMeshVisual` |
-| RViz plugin lookup names | `voxfield_rviz_plugin/VoxfieldMesh`, `/VoxfieldMultiMesh` | `voxfield_rviz_plugin/VoxfieldMesh`, `/VoxfieldMultiMesh` |
-| Ogre resources | `voxblox.material`, materials `VoxfieldMaterial`, `VoxfieldMaterialTransparent`, resource group `VoxfieldMaterials` | `voxfield.material`, `VoxfieldMaterial`, `VoxfieldMaterialTransparent`, `VoxfieldMaterials` |
-| CMake targets | `voxblox`, `voxblox_proto`, `voxfield_ros`, `voxfield_rviz_plugin` | `voxfield`, `voxfield_proto`, `voxfield_ros`, `voxfield_rviz_plugin` |
+| Package / dir | `voxblox_msgs/` | `voxfield_msgs/` |
+| Package / dir | `voxblox_ros/` | `voxfield_ros/` |
+| Package / dir | `voxblox_rviz_plugin/` | `voxfield_rviz_plugin/` |
+| Include root | `voxblox/include/voxblox/…` → `#include <voxblox/core/…>` | `voxfield/include/voxfield/…` → `#include <voxfield/core/…>` |
+| Include root | `include/voxblox_ros/…`, `"voxblox_ros/…"` | `include/voxfield_ros/…`, `"voxfield_ros/…"` |
+| Include root | `include/voxblox_rviz_plugin/…` | `include/voxfield_rviz_plugin/…` |
+| C++ namespace | `namespace voxblox`, `voxblox::` | `namespace voxfield`, `voxfield::` |
+| C++ namespace | `namespace voxblox_rviz_plugin` | `namespace voxfield_rviz_plugin` |
+| Include guards | `VOXBLOX_…_H_`, `VOXBLOX_ROS_…`, `VOXBLOX_RVIZ_PLUGIN_…` | `VOXFIELD_…_H_`, `VOXFIELD_ROS_…`, `VOXFIELD_RVIZ_PLUGIN_…` |
+| Protobuf | `proto/voxblox/*.proto`, `package voxblox;`, `"voxblox/Block.pb.h"` | `proto/voxfield/*.proto`, `package voxfield;`, `"voxfield/Block.pb.h"` |
+| Messages | `voxblox_msgs::…` / `voxblox_msgs/…` | `voxfield_msgs::msg::…` / `voxfield_msgs/msg/…` |
+| RViz plugin classes | `VoxbloxMeshDisplay`, `VoxbloxMultiMeshDisplay`, `VoxbloxMeshVisual` | `VoxfieldMeshDisplay`, `VoxfieldMultiMeshDisplay`, `VoxfieldMeshVisual` |
+| RViz plugin lookup names | `voxblox_rviz_plugin/VoxbloxMesh`, `/VoxbloxMultiMesh` | `voxfield_rviz_plugin/VoxfieldMesh`, `/VoxfieldMultiMesh` |
+| Ogre resources | `voxblox.material`, materials `VoxbloxMaterial`, `VoxbloxMaterialTransparent`, resource group `VoxbloxMaterials` | `voxfield.material`, `VoxfieldMaterial`, `VoxfieldMaterialTransparent`, `VoxfieldMaterials` |
+| CMake targets | `voxblox`, `voxblox_proto`, `voxblox_ros`, `voxblox_rviz_plugin` | `voxfield`, `voxfield_proto`, `voxfield_ros`, `voxfield_rviz_plugin` |
 | Launch node name | `name="voxblox_node"` in every `.launch` → topics `/voxblox_node/...` | `name='voxfield_node'` → topics `/voxfield_node/...`. Update RViz configs, the smoke test, and README examples to match. |
 
 **Do NOT rename** (these name the Voxblox *method* or are external interfaces):
@@ -176,7 +176,7 @@ Note that the message **types** change (`voxfield_msgs/Mesh` → `voxfield_msgs/
 - Protobuf **message** names (`BlockProto`, `LayerProto`) and field numbers. With those unchanged, the binary map file format (`.vxblx`, `.tsdf`, …) stays wire-compatible, so maps saved by ROS 1 voxfield still load (protobuf wire format doesn't encode the package name).
 - Upstream credits, citation, and prose describing voxblox history in README/docs.
 
-Why the full rename and not just package names: both libraries could end up linked into one process (e.g. a node comparing voxblox and voxfield maps). Then identical C++ symbols in `namespace voxfield` are an ODR violation, identical protobuf full names (`voxblox.LayerProto`) abort at startup with "File already exists in database", and identical Ogre material names throw in RViz when both plugins load.
+Why the full rename and not just package names: both libraries could end up linked into one process (e.g. a node comparing voxblox and voxfield maps). Then identical C++ symbols in `namespace voxblox` are an ODR violation, identical protobuf full names (`voxblox.LayerProto`) abort at startup with "File already exists in database", and identical Ogre material names throw in RViz when both plugins load.
 
 **D2. Distro/toolchain.** ROS 2 Jazzy, `ament_cmake` (plain, not `ament_cmake_auto`, so dependencies stay explicit), `CMAKE_CXX_STANDARD 17`, keep `-Wall -Wextra`. Don't add `-Werror`.
 
@@ -251,7 +251,7 @@ It should call `pcl::toROSMsg` and set `header.frame_id` and `header.stamp`. All
 
 **D13. Services.** Callback signature: `void cb(const std::shared_ptr<Req> req, std::shared_ptr<Res> res)`. ROS 1 returned `bool` (false = call failed). ROS 2 has no failure channel, so log `RCLCPP_ERROR` on failure. **Keep `FilePath.srv` contents unchanged** (empty response), and record in the notes that adding `bool success` is a possible follow-up.
 
-**D14. Messages.** Keep all 7 `.msg` and 1 `.srv` identical in content, except that same-package type references change from `voxfield_msgs/Block` to `voxfield_msgs/Block` (or plain `Block`). That includes `MultiMesh.msg` and `LayerWithTrajectory.msg`. Field names already satisfy ROS 2 naming rules. C++: `voxfield_msgs::msg::Layer`, header `voxfield_msgs/msg/layer.hpp`.
+**D14. Messages.** Keep all 7 `.msg` and 1 `.srv` identical in content, except that same-package type references change from `voxblox_msgs/Block` to `voxfield_msgs/Block` (or plain `Block`). That includes `MultiMesh.msg` and `LayerWithTrajectory.msg`. Field names already satisfy ROS 2 naming rules. C++: `voxfield_msgs::msg::Layer`, header `voxfield_msgs/msg/layer.hpp`.
 
 **D15. Include layout.** Follow the Jazzy convention and install headers to `include/${PROJECT_NAME}/`. For example, `voxfield` installs `include/voxfield/voxfield/core/...`, and targets export `$<INSTALL_INTERFACE:include/${PROJECT_NAME}>`.
 
@@ -316,18 +316,18 @@ Delete `voxfield_https.rosinstall`, `voxfield_ssh.rosinstall`, and `rosdoc.yaml`
 
 ### Phase 1: Rename voxblox → voxfield (ROS 1 code, no porting yet)
 Do the rename on the unported code as a pure mechanical change, following D1 exactly. No porting or behavior change in this phase.
-1. `git mv` the four package dirs, `voxblox/include/voxblox` → `voxfield/include/voxfield`, `voxfield_ros/include/voxfield_ros` → `voxfield_ros/include/voxfield_ros`, `voxfield_rviz_plugin/include/voxfield_rviz_plugin` → `…/voxfield_rviz_plugin`, `proto/voxblox` → `proto/voxfield`, `voxblox.material` → `voxfield.material`, and the rviz plugin source files `voxblox_mesh_*.{h,cc}` / `voxblox_multi_mesh_display.*` → `voxfield_*`.
+1. `git mv` the four package dirs, `voxblox/include/voxblox` → `voxfield/include/voxfield`, `voxblox_ros/include/voxblox_ros` → `voxfield_ros/include/voxfield_ros`, `voxblox_rviz_plugin/include/voxblox_rviz_plugin` → `…/voxfield_rviz_plugin`, `proto/voxblox` → `proto/voxfield`, `voxblox.material` → `voxfield.material`, and the rviz plugin source files `voxblox_mesh_*.{h,cc}` / `voxblox_multi_mesh_display.*` → `voxfield_*`.
 2. Rewrite identifiers with targeted, word-aware substitutions (e.g. `perl -pi -e` with `\b` anchors), **one rule per row of the D1 table**, not a blanket `s/voxblox/voxfield/`. Suggested order:
-   - `#include [<"]voxfield_ros/` → `voxfield_ros/`; `voxfield_rviz_plugin/` → `voxfield_rviz_plugin/`; `voxfield_msgs/` → `voxfield_msgs/`; `#include [<"]voxblox/` → `voxfield/`.
-   - `\bnamespace voxblox\b` → `namespace voxfield`; `\bvoxblox::` → `voxfield::`; the same for `voxfield_rviz_plugin` and `voxfield_msgs` tokens.
-   - Include guards `\bVOXFIELD_` → `VOXFIELD_`.
-   - Proto `package voxfield;` → `package voxfield;`.
+   - `#include [<"]voxblox_ros/` → `voxfield_ros/`; `voxblox_rviz_plugin/` → `voxfield_rviz_plugin/`; `voxblox_msgs/` → `voxfield_msgs/`; `#include [<"]voxblox/` → `voxfield/`.
+   - `\bnamespace voxblox\b` → `namespace voxfield`; `\bvoxblox::` → `voxfield::`; the same for `voxblox_rviz_plugin` and `voxblox_msgs` tokens.
+   - Include guards `\bVOXBLOX_` → `VOXFIELD_`.
+   - Proto `package voxblox;` → `package voxfield;`.
    - Rviz plugin class/lookup names and Ogre material/resource-group names per D1.
    - `package.xml` `<name>` + `<depend>` entries and CMake `project()` names.
 3. Afterwards, run `grep -rniE "voxblox" --exclude-dir=.git .` and classify **every** remaining hit as "keep (method name / credit / param name)" per D1's do-not-rename list, or fix it. Put the summary in `docs/ROS2_PORT_NOTES.md` ("Rename log").
 4. Update `plugin_description.xml` and `.rviz` class references (`voxfield_rviz_plugin/VoxfieldMesh`). The old `.rviz` files will be regenerated in Phase 10 anyway.
 
-**Accept:** `grep -rnE "namespace voxfield|voxfield::|VOXFIELD_|voxfield_msgs|voxfield_ros|voxfield_rviz_plugin|package voxfield;|#include [<\"]voxblox/" --exclude-dir=.git .` returns nothing outside docs/credits. Every remaining `voxblox` hit is on the keep-list. Commit as `Rename voxblox packages/namespace to voxfield`. (It can't be built yet; ROS 1 isn't available. Correctness is checked from Phase 3 on.)
+**Accept:** `grep -rnE "namespace voxblox|voxblox::|VOXBLOX_|voxblox_msgs|voxblox_ros|voxblox_rviz_plugin|package voxblox;|#include [<\"]voxblox/" --exclude-dir=.git .` returns nothing outside docs/credits. Every remaining `voxblox` hit is on the keep-list. Commit as `Rename voxblox packages/namespace to voxfield`. (It can't be built yet; ROS 1 isn't available. Correctness is checked from Phase 3 on.)
 
 ### Phase 2: Vendor minkindr into `voxfield`
 Per D3: copy the headers to `voxfield/third_party/minkindr/include/kindr/...` + `LICENSE`, and note the source and commit. If the minkindr headers include glog/gflags, voxfield already links those.
@@ -407,14 +407,14 @@ Port in this order, reusing the Phase 6 patterns: `VoxfieldServer` (most importa
 
 ### Phase 8: `voxfield_rviz_plugin`
 Port to `rviz_common` (Qt5, Ogre 1.12 via `rviz_ogre_vendor`):
-- `rviz::MessageFilterDisplay<voxfield_msgs::Mesh>` → `rviz_common::MessageFilterDisplay<voxfield_msgs::msg::Mesh>`. `processMessage(voxfield_msgs::msg::Mesh::ConstSharedPtr msg)`.
+- `rviz::MessageFilterDisplay<voxblox_msgs::Mesh>` → `rviz_common::MessageFilterDisplay<voxfield_msgs::msg::Mesh>`. `processMessage(voxfield_msgs::msg::Mesh::ConstSharedPtr msg)`.
 - `VoxfieldMultiMeshDisplay` subscribes to `MultiMesh` and manages its own subscriber/property tree. Port it to `rviz_common::RosTopicDisplay<voxfield_msgs::msg::MultiMesh>` or `MessageFilterDisplay`, whichever matches its structure. Keep the per-namespace visibility tree.
 - `#include <OGRE/OgreSceneNode.h>` → `#include <OgreSceneNode.h>` (and the same for other Ogre headers).
 - `context_->getFrameManager()->getTransform(header, position, orientation)` has the same shape in `rviz_common::FrameManagerIface`. `ros::Time` → `rclcpp::Time`, and `header` is `std_msgs::msg::Header`.
 - `material_loader.cc`: `ros::package::getPath(...)` → `ament_index_cpp::get_package_share_directory("voxfield_rviz_plugin")`. The resource group and material names are the renamed ones from D1. Install `content/materials/voxfield.material` and `icons/` to `share/${PROJECT_NAME}`. Rename the icons to `VoxfieldMesh.png` / `VoxfieldMultiMesh.png`, since rviz looks them up by class name.
 - `plugin_description.xml`: `<library path="voxfield_rviz_plugin">`, classes `voxfield_rviz_plugin/VoxfieldMesh` and `voxfield_rviz_plugin/VoxfieldMultiMesh`, `base_class_type="rviz_common::Display"`, and `message_type` `voxfield_msgs/msg/Mesh` / `voxfield_msgs/msg/MultiMesh`. In CMake: `pluginlib_export_plugin_description_file(rviz_common plugin_description.xml)`. Also `PLUGINLIB_EXPORT_CLASS(voxfield_rviz_plugin::VoxfieldMeshDisplay, rviz_common::Display)`.
 - CMake: `set(CMAKE_AUTOMOC ON)`, `find_package(Qt5 REQUIRED COMPONENTS Widgets)`, add headers with `Q_OBJECT` to the sources so moc sees them, and link `rviz_common::rviz_common`, `rviz_rendering::rviz_rendering`, `rviz_ogre_vendor::OgreMain`, `pluginlib::pluginlib`, and `Qt5::Widgets`. Keep `-DQT_NO_KEYWORDS`.
-- The Hector reference (`/opt/hector/jazzy/lib/libvoxfield_rviz_plugin.so`, built from the same upstream sources) can be used as a sanity check for the mesh display approach.
+- The Hector reference (`/opt/hector/jazzy/lib/libvoxblox_rviz_plugin.so`, built from the same upstream sources) can be used as a sanity check for the mesh display approach.
 
 **Accept:** plugin builds. `rviz2` lists "VoxfieldMesh" and "VoxfieldMultiMesh" under Add → By display type. Adding VoxfieldMesh on a server's `~/mesh` topic renders the simulation or smoke-test mesh. In the user's normal shell, where Hector's voxblox plugin is also discoverable, both plugins load in the same RViz2 session without errors (checks the Ogre material rename).
 
@@ -447,7 +447,7 @@ The repo ships ROS 1 parameter files for the example datasets. Convert them; don
 3. Replace hard-coded bag paths (`/media/yuepan/...`) with a required `bag_file` argument or an empty default + warning.
 4. Delete the old `.launch` XML files once their `.py` equivalents exist.
 5. **RViz2 configs:** recreate the 8 `.rviz` files in RViz2 format. Easiest: launch rviz2, add displays, save. Or hand-write YAML using existing RViz2 configs as templates.
-   - Map old display classes: `rviz/PointCloud`/`PointCloud2` → `rviz_default_plugins/PointCloud2`, `rviz/MarkerArray` → `rviz_default_plugins/MarkerArray`, `rviz/Marker` → `rviz_default_plugins/Marker`, `rviz/Grid` → `rviz_default_plugins/Grid`, `rviz/Odometry` → `rviz_default_plugins/Odometry`, `rviz/Pose` → `rviz_default_plugins/Pose`, `rviz/InteractiveMarkers` → `rviz_default_plugins/InteractiveMarkers`, `voxfield_rviz_plugin/VoxfieldMesh` → `voxfield_rviz_plugin/VoxfieldMesh`.
+   - Map old display classes: `rviz/PointCloud`/`PointCloud2` → `rviz_default_plugins/PointCloud2`, `rviz/MarkerArray` → `rviz_default_plugins/MarkerArray`, `rviz/Marker` → `rviz_default_plugins/Marker`, `rviz/Grid` → `rviz_default_plugins/Grid`, `rviz/Odometry` → `rviz_default_plugins/Odometry`, `rviz/Pose` → `rviz_default_plugins/Pose`, `rviz/InteractiveMarkers` → `rviz_default_plugins/InteractiveMarkers`, `voxblox_rviz_plugin/VoxbloxMesh` → `voxfield_rviz_plugin/VoxfieldMesh`.
    - Topics: `/voxfield_node/mesh`, `/voxfield_node/tsdf_slice`, etc. (the old files used `/voxblox_node/...`; see D1 node-name row).
    - For latched topics, set Durability Policy = Transient Local on those displays.
    - Keep the fixed frame (`world`), views, and color settings from the old files where practical.
@@ -483,8 +483,8 @@ The repo ships ROS 1 parameter files for the example datasets. Convert them; don
 | `#include <ros/ros.h>` | `#include <rclcpp/rclcpp.hpp>` |
 | `sensor_msgs::PointCloud2::Ptr` | `sensor_msgs::msg::PointCloud2::SharedPtr` |
 | `#include <sensor_msgs/PointCloud2.h>` | `#include <sensor_msgs/msg/point_cloud2.hpp>` |
-| `#include <voxfield_msgs/FilePath.h>` | `#include <voxfield_msgs/srv/file_path.hpp>` |
-| `#include <voxfield_msgs/Mesh.h>` | `#include <voxfield_msgs/msg/mesh.hpp>` |
+| `#include <voxblox_msgs/FilePath.h>` | `#include <voxfield_msgs/srv/file_path.hpp>` |
+| `#include <voxblox_msgs/Mesh.h>` | `#include <voxfield_msgs/msg/mesh.hpp>` |
 | `#include <std_srvs/Empty.h>` | `#include <std_srvs/srv/empty.hpp>` |
 | `nh.advertise<T>("x", n, latch)` | `node->create_publisher<T>("x" or "~/x", qos)` (D7) |
 | `nh.subscribe("x", n, &C::cb, this)` | `node->create_subscription<T>("x", qos, std::bind(&C::cb, this, std::placeholders::_1))` |
@@ -510,7 +510,7 @@ The repo ships ROS 1 parameter files for the example datasets. Convert them; don
 | `pcl_ros` direct publish of `pcl::PointCloud` | `pcl::toROSMsg` → `PointCloud2` (D11) |
 | `ros::spin()` / `ros::spinOnce()` | `rclcpp::spin(node)` / `rclcpp::spin_some(node)` |
 | `ros::shutdown()` | `rclcpp::shutdown()` |
-| `$(find voxfield_ros)` | `FindPackageShare('voxfield_ros')` / `get_package_share_directory('voxfield_ros')` |
+| `$(find voxblox_ros)` | `FindPackageShare('voxfield_ros')` / `get_package_share_directory('voxfield_ros')` |
 | `<rosparam file=...>` | `parameters=[path]` in `Node(...)` |
 | `<remap from= to=>` | `remappings=[(from, to)]` |
 | `<param name="use_sim_time" value="true"/>` (global) | `{'use_sim_time': True}` **on every node** |
@@ -531,7 +531,7 @@ The repo ships ROS 1 parameter files for the example datasets. Convert them; don
 9. **gflags vs `--ros-args`:** see D16. Without the fix, every node exits at startup with "unknown command line flag".
 10. **Header-only helpers calling `now()`:** see D12. A local `rclcpp::Clock` ignores sim time, and then mesh stamps and bag time disagree.
 11. **Eigen alignment:** the classes use `EIGEN_MAKE_ALIGNED_OPERATOR_NEW`. Keep it. When holding servers in `std::make_shared`/`std::make_unique`, C++17 aligned new handles it, but don't remove the macros.
-12. **Rename slips.** A blanket `sed s/voxblox/voxfield/` would break method names (`voxblox_server`), param names (`voxblox_file_path`), and upstream credits. Use the D1 rules and the Phase 1 grep audit. Conversely, a *missed* rename (e.g. a leftover `${1}voxfield/...>`) may still compile in the user's normal shell, because Hector's headers satisfy it. That's why Phase 1 has a grep gate and the build is checked in the clean env too.
+12. **Rename slips.** A blanket `sed s/voxblox/voxfield/` would break method names (`voxblox_server`), param names (`voxblox_file_path`), and upstream credits. Use the D1 rules and the Phase 1 grep audit. Conversely, a *missed* rename (e.g. a leftover `#include <voxblox/...>`) may still compile in the user's normal shell, because Hector's headers satisfy it. That's why Phase 1 has a grep gate and the build is checked in the clean env too.
 13. **`kDefaultMaxIntensity`** is defined in both `tsdf_server.h` and `np_tsdf_server.h` in the same namespace. Any translation unit including both fails to compile. Don't include both. If you must, move it to one shared header (behavior-neutral).
 14. **Known upstream issues. Record them; don't fix them in the port commits:**
     - `NpTsdfServer::computeNormalImage`: the condition `if (v == height_)` can never be true inside `for (v = 0; v < height_; ...)`, so for `v = height_-1` it reads row `height_` of `vertex_map`/`depth_image`, an out-of-bounds read. The intended condition is probably `v == height_ - 1`.

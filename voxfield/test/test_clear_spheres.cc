@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
-${1}voxfield/integrator/esdf_integrator.h"
-${1}voxfield/integrator/tsdf_integrator.h"
-${1}voxfield/io/layer_io.h"
-${1}voxfield/simulation/simulation_world.h"
-${1}voxfield/utils/evaluation_utils.h"
-${1}voxfield/utils/layer_utils.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
+#include "voxfield/integrator/esdf_integrator.h"
+#include "voxfield/integrator/tsdf_integrator.h"
+#include "voxfield/io/layer_io.h"
+#include "voxfield/simulation/simulation_world.h"
+#include "voxfield/utils/evaluation_utils.h"
+#include "voxfield/utils/layer_utils.h"
 
 using namespace voxfield;  // NOLINT
 

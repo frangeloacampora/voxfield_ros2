@@ -6,10 +6,10 @@
 #include <random>
 #include <vector>
 
-${1}voxfield/core/common.h"
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
-${1}voxfield/simulation/objects.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
+#include "voxfield/simulation/objects.h"
 
 namespace voxfield {
 
@@ -112,4 +112,4 @@ class SimulationWorld {
 
 #endif  // VOXFIELD_SIMULATION_SIMULATION_WORLD_H_
 
-${1}voxfield/simulation/simulation_world_inl.h"
+#include "voxfield/simulation/simulation_world_inl.h"

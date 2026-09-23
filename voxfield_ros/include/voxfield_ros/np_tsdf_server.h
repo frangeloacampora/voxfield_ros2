@@ -17,13 +17,13 @@
 #include <tf/transform_broadcaster.h>
 #include <visualization_msgs/MarkerArray.h>
 
-${1}voxfield/alignment/icp.h>
-${1}voxfield/core/tsdf_map.h>
-${1}voxfield/integrator/np_tsdf_integrator.h>
-${1}voxfield/io/layer_io.h>
-${1}voxfield/io/mesh_ply.h>
-${1}voxfield/mesh/mesh_integrator.h>
-${1}voxfield/utils/color_maps.h>
+#include <voxfield/alignment/icp.h>
+#include <voxfield/core/tsdf_map.h>
+#include <voxfield/integrator/np_tsdf_integrator.h>
+#include <voxfield/io/layer_io.h>
+#include <voxfield/io/mesh_ply.h>
+#include <voxfield/mesh/mesh_integrator.h>
+#include <voxfield/utils/color_maps.h>
 #include <voxfield_msgs/FilePath.h>
 #include <voxfield_msgs/Mesh.h>
 

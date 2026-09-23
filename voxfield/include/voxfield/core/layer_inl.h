@@ -13,11 +13,11 @@
 #include <google/protobuf/message.h>
 #include <google/protobuf/message_lite.h>
 
-${1}voxfield/Block.pb.h"
-${1}voxfield/Layer.pb.h"
-${1}voxfield/core/block.h"
-${1}voxfield/core/voxel.h"
-${1}voxfield/utils/protobuf_utils.h"
+#include "voxfield/Block.pb.h"
+#include "voxfield/Layer.pb.h"
+#include "voxfield/core/block.h"
+#include "voxfield/core/voxel.h"
+#include "voxfield/utils/protobuf_utils.h"
 
 namespace voxfield {
 

@@ -1,4 +1,4 @@
-${1}voxfield/integrator/esdf_occ_integrator.h"
+#include "voxfield/integrator/esdf_occ_integrator.h"
 
 namespace voxfield {
 

@@ -3,9 +3,9 @@
 
 #include <vector>
 
-${1}voxfield/core/block_hash.h"
-${1}voxfield/core/common.h"
-${1}voxfield/mesh/mesh.h"
+#include "voxfield/core/block_hash.h"
+#include "voxfield/core/common.h"
+#include "voxfield/mesh/mesh.h"
 
 namespace voxfield {
 

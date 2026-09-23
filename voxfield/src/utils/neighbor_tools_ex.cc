@@ -1,6 +1,6 @@
-${1}voxfield/utils/neighbor_tools_ex.h"
+#include "voxfield/utils/neighbor_tools_ex.h"
 
-${1}voxfield/core/common.h"
+#include "voxfield/core/common.h"
 
 namespace voxfield {
 

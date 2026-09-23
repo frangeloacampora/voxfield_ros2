@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-${1}voxfield/utils/bucket_queue.h"
+#include "voxfield/utils/bucket_queue.h"
 
 namespace voxfield {
 

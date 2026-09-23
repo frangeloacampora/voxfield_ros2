@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <vector>
 
-${1}voxfield/Block.pb.h"
-${1}voxfield/utils/voxel_utils.h"
+#include "voxfield/Block.pb.h"
+#include "voxfield/utils/voxel_utils.h"
 
 namespace voxfield {
 

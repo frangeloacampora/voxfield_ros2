@@ -1,4 +1,4 @@
-${1}voxfield/integrator/esdf_occ_edt_integrator.h"
+#include "voxfield/integrator/esdf_occ_edt_integrator.h"
 // No neighborhood directional search by default
 // #define DIRECTION_GUIDE
 

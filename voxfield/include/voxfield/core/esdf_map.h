@@ -7,11 +7,11 @@
 
 #include <glog/logging.h>
 
-${1}voxfield/core/common.h"
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
-${1}voxfield/interpolator/interpolator.h"
-${1}voxfield/io/layer_io.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
+#include "voxfield/interpolator/interpolator.h"
+#include "voxfield/io/layer_io.h"
 
 namespace voxfield {
 /**

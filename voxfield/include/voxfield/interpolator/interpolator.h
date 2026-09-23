@@ -3,9 +3,9 @@
 
 #include <memory>
 
-${1}voxfield/core/common.h"
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
 
 namespace voxfield {
 
@@ -103,4 +103,4 @@ class Interpolator {
 
 #endif  // VOXFIELD_INTERPOLATOR_INTERPOLATOR_H_
 
-${1}voxfield/interpolator/interpolator_inl.h"
+#include "voxfield/interpolator/interpolator_inl.h"

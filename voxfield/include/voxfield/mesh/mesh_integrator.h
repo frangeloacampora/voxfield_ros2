@@ -33,14 +33,14 @@
 #include <Eigen/Core>
 #include <glog/logging.h>
 
-${1}voxfield/core/layer.h"
-${1}voxfield/core/voxel.h"
-${1}voxfield/integrator/integrator_utils.h"
-${1}voxfield/interpolator/interpolator.h"
-${1}voxfield/mesh/marching_cubes.h"
-${1}voxfield/mesh/mesh_layer.h"
-${1}voxfield/utils/meshing_utils.h"
-${1}voxfield/utils/timing.h"
+#include "voxfield/core/layer.h"
+#include "voxfield/core/voxel.h"
+#include "voxfield/integrator/integrator_utils.h"
+#include "voxfield/interpolator/interpolator.h"
+#include "voxfield/mesh/marching_cubes.h"
+#include "voxfield/mesh/mesh_layer.h"
+#include "voxfield/utils/meshing_utils.h"
+#include "voxfield/utils/timing.h"
 
 namespace voxfield {
 

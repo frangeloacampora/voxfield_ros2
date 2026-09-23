@@ -1,4 +1,4 @@
-${1}voxfield/integrator/integrator_utils.h"
+#include "voxfield/integrator/integrator_utils.h"
 
 namespace voxfield {
 

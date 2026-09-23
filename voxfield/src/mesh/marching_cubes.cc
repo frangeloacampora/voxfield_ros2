@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-${1}voxfield/mesh/marching_cubes.h"
+#include "voxfield/mesh/marching_cubes.h"
 
 namespace voxfield {
 // Lookup table from the 256 possible cube configurations from

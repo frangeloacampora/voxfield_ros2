@@ -1,4 +1,4 @@
-${1}voxfield/integrator/np_tsdf_integrator.h"
+#include "voxfield/integrator/np_tsdf_integrator.h"
 
 #include <iostream>
 #include <list>

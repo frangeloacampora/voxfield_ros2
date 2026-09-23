@@ -1,9 +1,9 @@
 #ifndef VOXFIELD_UTILS_VOXEL_UTILS_H_
 #define VOXFIELD_UTILS_VOXEL_UTILS_H_
 
-${1}voxfield/core/color.h"
-${1}voxfield/core/common.h"
-${1}voxfield/core/voxel.h"
+#include "voxfield/core/color.h"
+#include "voxfield/core/common.h"
+#include "voxfield/core/voxel.h"
 
 namespace voxfield {
 template <typename VoxelType>

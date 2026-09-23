@@ -23,7 +23,7 @@
 #ifndef VOXFIELD_MESH_MARCHING_CUBES_H_
 #define VOXFIELD_MESH_MARCHING_CUBES_H_
 
-${1}voxfield/mesh/mesh.h"
+#include "voxfield/mesh/mesh.h"
 
 namespace voxfield {
 

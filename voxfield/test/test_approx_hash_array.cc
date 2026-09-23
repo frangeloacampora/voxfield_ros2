@@ -3,9 +3,9 @@
 
 #include <gtest/gtest.h>
 
-${1}voxfield/core/block_hash.h"
-${1}voxfield/core/common.h"
-${1}voxfield/utils/approx_hash_array.h"
+#include "voxfield/core/block_hash.h"
+#include "voxfield/core/common.h"
+#include "voxfield/utils/approx_hash_array.h"
 
 using namespace voxfield;  // NOLINT
 

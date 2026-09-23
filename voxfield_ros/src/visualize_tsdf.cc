@@ -11,10 +11,10 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 
-${1}voxfield/core/tsdf_map.h>
-${1}voxfield/io/layer_io.h>
-${1}voxfield/io/mesh_ply.h>
-${1}voxfield/mesh/mesh_integrator.h>
+#include <voxfield/core/tsdf_map.h>
+#include <voxfield/io/layer_io.h>
+#include <voxfield/io/mesh_ply.h>
+#include <voxfield/mesh/mesh_integrator.h>
 
 #include "voxfield_ros/mesh_pcl.h"
 #include "voxfield_ros/mesh_vis.h"
