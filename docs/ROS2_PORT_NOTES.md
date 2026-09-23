@@ -1019,3 +1019,83 @@ here for a single point of reference):
 10. `process_every_nth_frame` was declared as a launch argument in nearly
     every ROS 1 `.launch` file but never read by any node -- a dead
     argument, dropped rather than ported. (Phase 10 notes above.)
+11. `VoxfieldServer::saveMap()` has its TSDF-layer save commented out:
+    ```cpp
+    bool VoxfieldServer::saveMap(const std::string& file_path) {
+      // Output TSDF map first, then ESDF.
+      // const bool success = NpTsdfServer::saveMap(file_path);
+      bool success = true;
+      constexpr bool kClearFile = false;
+      return success &&
+             io::SaveLayer(esdf_map_->getEsdfLayer(), file_path, kClearFile);
+    }
+    ```
+    present verbatim in the ROS 1 original (`git show main:voxblox_ros/
+    src/voxfield_server.cc`), so a `~/save_map`-written file only ever
+    contains the ESDF layer, while `loadMap()` (not overridden the same
+    way) still loads TSDF first, then ESDF, and fails (logs `Failed to
+    load map from ...`) on the TSDF half every time. Found while writing
+    the Phase 12 smoke test (below); reproduced deliberately in that
+    test's `~/save_map` -> `~/load_map` check rather than worked around.
+
+### `rcl_yaml_param_parser` gotcha found while writing the smoke test
+Multiple `--params-file` arguments for the same node merge with later
+files overriding earlier ones for a given parameter -- *except* when the
+same key's YAML-inferred type differs between files, in which case the
+later override is silently dropped and the earlier value wins. Confirmed
+empirically (not documented anywhere obvious): `update_esdf_every_n_sec:
+0` (int) in `kitti_param.yaml`, overridden with `1.0` (double) via a
+third `--params-file`, silently kept `0` -- switching the override to the
+int `1` fixed it. Not a port bug (this is `rcl_yaml_param_parser`/rclcpp
+core behavior, unrelated to D6's coercion, which never even sees a
+dropped override), but worth knowing for anyone else layering parameter
+overrides via `mapping.launch.py` or `ros2 launch ... --params-file`.
+
+## Phase 12: End-to-end validation
+
+### Step 1: dataset-free automated smoke test
+
+Wrote `scripts/fake_sensor_publisher.py`: an rclpy node publishing a
+synthetic, organized (`height`x`width`, matching `kitti_calib.yaml`'s
+`fov_up`/`fov_down`/`width`/`height`) `sensor_msgs/PointCloud2` of a
+closed, airtight, axis-aligned box room (default 10x10x3 m), ray-cast
+from a sensor circling near the room's center -- every ray is guaranteed
+to hit a wall/floor/ceiling (`is_dense: true`, verified: no NaNs, point
+count == `height*width` every frame), so both the projective
+(NpTsdfServer/VoxfieldServer) and non-projective
+(TsdfServer/VoxbloxServer/FiestaServer/VoxedtServer) integration paths
+get real geometry. Broadcasts a moving `world -> velodyne` TF at the same
+10 Hz rate.
+
+Wrote `voxfield_ros/test/test_smoke.launch.py` (one file, `method` read
+from `sys.argv`, registered 5x via `add_launch_test(... ARGS
+"method:=<name>")` in `CMakeLists.txt` -- one per server). Starts the
+fake publisher + `<method>_server` against `kitti_param.yaml`/
+`kitti_calib.yaml`, `use_sim_time:=false`,
+`update_esdf_every_n_sec` overridden to the int `1` (see the
+`rcl_yaml_param_parser` gotcha above -- this is exactly where it was
+found: the override silently failed as `1.0` first). Every method
+asserts `~/mesh` receives a message with a non-empty mesh block within
+30s; `method=voxfield` additionally asserts `~/tsdf_slice`/`~/esdf_slice`
+produce a non-empty cloud and exercises `~/save_map` -> `~/load_map`
+(the load is expected to fail -- see known-upstream-issue #11 above,
+found by this very test).
+
+**Environment note:** this sandbox's normal shell has `~/miniconda3/bin`
+ahead of `/usr/bin` on `PATH` (the same issue as the Phase 3/4
+`rosidl`/miniconda note), which breaks `rclpy` entirely (`No module named
+'rclpy._rclpy_pybind11'`) when `python3` resolves to miniconda's build.
+Two independent fixes were needed: (1) the smoke test always launches the
+fake publisher via the absolute path `/usr/bin/python3`, never a bare
+`python3`; (2) `colcon build`/`colcon test` themselves must run via
+`scripts/clean_env.sh` for this specific test, since `add_launch_test`'s
+generated CTest command bakes in whatever `python3` CMake's Python
+detection found *at configure time* -- configuring in the normal shell
+would bake in miniconda's broken interpreter for the whole launch-test
+invocation, not just the fake-publisher subprocess.
+
+**Verified:** all 5 `test_smoke_<method>` launch tests pass (`colcon test
+--packages-select voxfield_ros --ctest-args -R test_smoke_`, run via
+`scripts/clean_env.sh`). Full-workspace `colcon test`: 80 tests, 0
+errors, 0 failures, 4 skipped (the 4 non-`voxfield` methods'
+slice/save/load subtest, intentionally skipped -- mesh-only per the plan).

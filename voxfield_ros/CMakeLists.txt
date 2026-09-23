@@ -154,6 +154,19 @@ if(BUILD_TESTING)
   ament_add_gtest(test_kindr_conversions test/test_kindr_conversions.cc
     SKIP_LINKING_MAIN_LIBRARIES)
   target_link_libraries(test_kindr_conversions ${PROJECT_NAME} gtest)
+
+  # Dataset-free smoke test (plan §6 Phase 12 step 1): one launch_test per
+  # server executable, sharing test/test_smoke.launch.py via the `method`
+  # launch argument. voxfield gets the full mesh/slice/save+load check;
+  # the rest get mesh-only (see the launch file's own docstring).
+  find_package(launch_testing_ament_cmake REQUIRED)
+  foreach(_smoke_method IN ITEMS voxfield np_tsdf voxblox fiesta voxedt)
+    add_launch_test(test/test_smoke.launch.py
+      TARGET test_smoke_${_smoke_method}
+      ARGS "method:=${_smoke_method}"
+      TIMEOUT 60
+    )
+  endforeach()
 endif()
 
 ##########
