@@ -1,15 +1,12 @@
-#include <gflags/gflags.h>
-#include <glog/logging.h>
-#include <ros/ros.h>
-
 #include "voxfield_ros/simulation_server.h"
+
+#include "voxfield_ros/node_main.h"
 
 namespace voxfield {
 class SimulationServerImpl : public voxfield::SimulationServer {
  public:
-  SimulationServerImpl(
-      const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
-      : SimulationServer(nh, nh_private) {}
+  explicit SimulationServerImpl(rclcpp::Node::SharedPtr node)
+      : SimulationServer(node) {}
 
   void prepareWorld() {
     CHECK_NOTNULL(world_);
@@ -35,18 +32,16 @@ class SimulationServerImpl : public voxfield::SimulationServer {
 }  // namespace voxfield
 
 int main(int argc, char** argv) {
-  ros::init(argc, argv, "voxblox_sim");
-  google::InitGoogleLogging(argv[0]);
-  google::ParseCommandLineFlags(&argc, &argv, false);
-  google::InstallFailureSignalHandler();
-  ros::NodeHandle nh;
-  ros::NodeHandle nh_private("~");
+  rclcpp::init(argc, argv);
+  voxfield::initGflagsAndGlog(argc, argv);
 
-  voxfield::SimulationServerImpl sim_eval(nh, nh_private);
+  auto node = std::make_shared<rclcpp::Node>("voxblox_sim");
+  voxfield::SimulationServerImpl sim_eval(node);
 
   sim_eval.run();
 
-  ROS_INFO("Done.");
-  ros::spin();
+  RCLCPP_INFO(node->get_logger(), "Done.");
+  rclcpp::spin(node);
+  rclcpp::shutdown();
   return 0;
 }

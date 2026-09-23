@@ -6,10 +6,9 @@
 #include <pcl/io/ply_io.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl_msgs/PolygonMesh.h>
-#include <pcl_ros/point_cloud.h>
-#include <ros/ros.h>
-#include <sensor_msgs/PointCloud2.h>
+#include <pcl_msgs/msg/polygon_mesh.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 
 #include <voxfield/core/tsdf_map.h>
 #include <voxfield/io/layer_io.h>
@@ -18,52 +17,53 @@
 
 #include "voxfield_ros/mesh_pcl.h"
 #include "voxfield_ros/mesh_vis.h"
+#include "voxfield_ros/node_main.h"
+#include "voxfield_ros/param_utils.h"
 #include "voxfield_ros/ptcloud_vis.h"
 
 namespace voxfield {
 class SimpleTsdfVisualizer {
  public:
-  explicit SimpleTsdfVisualizer(const ros::NodeHandle& nh_private)
-      : nh_private_(nh_private),
+  explicit SimpleTsdfVisualizer(rclcpp::Node::SharedPtr node)
+      : node_(node),
         tsdf_surface_distance_threshold_factor_(2.0),
         tsdf_world_frame_("world"),
         tsdf_mesh_color_mode_(ColorMode::kColor),
         tsdf_voxel_ply_output_path_("") {
-    ROS_DEBUG_STREAM("\tSetting up ROS publishers...");
+    RCLCPP_DEBUG(node_->get_logger(), "\tSetting up ROS publishers...");
 
+    const rclcpp::QoS kLatchedQos =
+        rclcpp::QoS(1).transient_local().reliable();
     surface_pointcloud_pub_ =
-        nh_private_.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
-            "tsdf_voxels_near_surface", 1, true);
+        node_->create_publisher<sensor_msgs::msg::PointCloud2>(
+            "~/tsdf_voxels_near_surface", kLatchedQos);
 
     tsdf_pointcloud_pub_ =
-        nh_private_.advertise<pcl::PointCloud<pcl::PointXYZI>>(
-            "all_tsdf_voxels", 1, true);
+        node_->create_publisher<sensor_msgs::msg::PointCloud2>(
+            "~/all_tsdf_voxels", kLatchedQos);
 
-    mesh_pub_ = nh_private_.advertise<voxfield_msgs::Mesh>("mesh", 1, true);
+    mesh_pub_ = node_->create_publisher<voxfield_msgs::msg::Mesh>(
+        "~/mesh", kLatchedQos);
 
     mesh_pointcloud_pub_ =
-        nh_private_.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
-            "mesh_as_pointcloud", 1, true);
+        node_->create_publisher<sensor_msgs::msg::PointCloud2>(
+            "~/mesh_as_pointcloud", kLatchedQos);
 
-    mesh_pcl_mesh_pub_ =
-        nh_private_.advertise<pcl_msgs::PolygonMesh>("mesh_pcl", 1, true);
+    mesh_pcl_mesh_pub_ = node_->create_publisher<voxfield_msgs::msg::Mesh>(
+        "~/mesh_pcl", kLatchedQos);
 
-    ROS_DEBUG_STREAM("\tRetreiving ROS parameters...");
+    RCLCPP_DEBUG(node_->get_logger(), "\tRetreiving ROS parameters...");
 
-    nh_private_.param(
-        "tsdf_surface_distance_threshold_factor",
-        tsdf_surface_distance_threshold_factor_,
+    param(
+        *node_, "tsdf_surface_distance_threshold_factor",
         tsdf_surface_distance_threshold_factor_);
-    nh_private_.param("tsdf_world_frame", tsdf_world_frame_, tsdf_world_frame_);
-    nh_private_.param(
-        "tsdf_voxel_ply_output_path", tsdf_voxel_ply_output_path_,
-        tsdf_voxel_ply_output_path_);
-    nh_private_.param(
-        "tsdf_mesh_output_path", tsdf_mesh_output_path_,
-        tsdf_mesh_output_path_);
+    param(*node_, "tsdf_world_frame", tsdf_world_frame_);
+    param(
+        *node_, "tsdf_voxel_ply_output_path", tsdf_voxel_ply_output_path_);
+    param(*node_, "tsdf_mesh_output_path", tsdf_mesh_output_path_);
 
     std::string color_mode = "color";
-    nh_private_.param("tsdf_mesh_color_mode", color_mode, color_mode);
+    param(*node_, "tsdf_mesh_color_mode", color_mode);
     if (color_mode == "color") {
       tsdf_mesh_color_mode_ = ColorMode::kColor;
     } else if (color_mode == "height") {
@@ -75,23 +75,33 @@ class SimpleTsdfVisualizer {
     } else if (color_mode == "gray") {
       tsdf_mesh_color_mode_ = ColorMode::kGray;
     } else {
-      ROS_FATAL_STREAM("Undefined mesh coloring mode: " << color_mode);
-      ros::shutdown();
+      RCLCPP_FATAL_STREAM(
+          node_->get_logger(), "Undefined mesh coloring mode: " << color_mode);
+      rclcpp::shutdown();
     }
 
-    ros::spinOnce();
+    rclcpp::spin_some(node_);
   }
 
   void run(const Layer<TsdfVoxel>& tsdf_layer);
 
  private:
-  ros::NodeHandle nh_private_;
+  rclcpp::Node::SharedPtr node_;
 
-  ros::Publisher surface_pointcloud_pub_;
-  ros::Publisher tsdf_pointcloud_pub_;
-  ros::Publisher mesh_pub_;
-  ros::Publisher mesh_pointcloud_pub_;
-  ros::Publisher mesh_pcl_mesh_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      surface_pointcloud_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      tsdf_pointcloud_pub_;
+  rclcpp::Publisher<voxfield_msgs::msg::Mesh>::SharedPtr mesh_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      mesh_pointcloud_pub_;
+  // NOTE(ROS2 port): upstream published pcl_msgs/PolygonMesh here, but the
+  // publish call actually sent a voxfield_msgs::Mesh (mesh_msg), not a
+  // pcl_msgs::PolygonMesh -- a pre-existing upstream bug (the constructed
+  // pcl_mesh_msg is unused). Kept as-is; the publisher's declared type is
+  // adjusted to match what's actually published so this still compiles
+  // under ROS 2's static typed publishers. See docs/ROS2_PORT_NOTES.md.
+  rclcpp::Publisher<voxfield_msgs::msg::Mesh>::SharedPtr mesh_pcl_mesh_pub_;
 
   // Settings
   double tsdf_surface_distance_threshold_factor_;
@@ -102,7 +112,8 @@ class SimpleTsdfVisualizer {
 };
 
 void SimpleTsdfVisualizer::run(const Layer<TsdfVoxel>& tsdf_layer) {
-  ROS_INFO_STREAM(
+  RCLCPP_INFO_STREAM(
+      node_->get_logger(),
       "\nTSDF Layer info:\n"
       << "\tVoxel size:\t\t " << tsdf_layer.voxel_size() << "\n"
       << "\t# Voxels per side:\t " << tsdf_layer.voxels_per_side() << "\n"
@@ -111,7 +122,7 @@ void SimpleTsdfVisualizer::run(const Layer<TsdfVoxel>& tsdf_layer) {
       << "\t# Allocated blocks:\t " << tsdf_layer.getNumberOfAllocatedBlocks()
       << "\n");
 
-  ROS_DEBUG_STREAM("\tVisualize voxels near surface...");
+  RCLCPP_DEBUG(node_->get_logger(), "\tVisualize voxels near surface...");
   {
     pcl::PointCloud<pcl::PointXYZI> pointcloud;
     const FloatingPoint surface_distance_thresh_m =
@@ -119,17 +130,17 @@ void SimpleTsdfVisualizer::run(const Layer<TsdfVoxel>& tsdf_layer) {
     voxfield::createSurfaceDistancePointcloudFromTsdfLayer(
         tsdf_layer, surface_distance_thresh_m, &pointcloud);
 
-    pointcloud.header.frame_id = tsdf_world_frame_;
-    surface_pointcloud_pub_.publish(pointcloud);
+    publishPclCloud(
+        surface_pointcloud_pub_, pointcloud, tsdf_world_frame_, node_->now());
   }
 
-  ROS_DEBUG_STREAM("\tVisualize all voxels...");
+  RCLCPP_DEBUG(node_->get_logger(), "\tVisualize all voxels...");
   {
     pcl::PointCloud<pcl::PointXYZI> pointcloud;
     voxfield::createDistancePointcloudFromTsdfLayer(tsdf_layer, &pointcloud);
 
-    pointcloud.header.frame_id = tsdf_world_frame_;
-    tsdf_pointcloud_pub_.publish(pointcloud);
+    publishPclCloud(
+        tsdf_pointcloud_pub_, pointcloud, tsdf_world_frame_, node_->now());
 
     if (!tsdf_voxel_ply_output_path_.empty()) {
       pcl::PLYWriter writer;
@@ -138,7 +149,7 @@ void SimpleTsdfVisualizer::run(const Layer<TsdfVoxel>& tsdf_layer) {
     }
   }
 
-  ROS_DEBUG_STREAM("\tVisualize mesh...");
+  RCLCPP_DEBUG(node_->get_logger(), "\tVisualize mesh...");
   {
     std::shared_ptr<MeshLayer> mesh_layer;
     mesh_layer.reset(new MeshLayer(tsdf_layer.block_size()));
@@ -152,28 +163,31 @@ void SimpleTsdfVisualizer::run(const Layer<TsdfVoxel>& tsdf_layer) {
     mesh_integrator->generateMesh(kOnlyMeshUpdatedBlocks, kClearUpdatedFlag);
 
     // Output as native voxblox mesh.
-    voxfield_msgs::Mesh mesh_msg;
-    generateVoxbloxMeshMsg(mesh_layer, tsdf_mesh_color_mode_, &mesh_msg);
+    voxfield_msgs::msg::Mesh mesh_msg;
+    generateVoxbloxMeshMsg(
+        mesh_layer, tsdf_mesh_color_mode_, &mesh_msg, node_->now());
     mesh_msg.header.frame_id = tsdf_world_frame_;
-    mesh_pub_.publish(mesh_msg);
+    mesh_pub_->publish(mesh_msg);
 
     // Output as point cloud.
     pcl::PointCloud<pcl::PointXYZRGB> pointcloud;
     fillPointcloudWithMesh(mesh_layer, tsdf_mesh_color_mode_, &pointcloud);
-    pointcloud.header.frame_id = tsdf_world_frame_;
-    mesh_pointcloud_pub_.publish(pointcloud);
+    publishPclCloud(
+        mesh_pointcloud_pub_, pointcloud, tsdf_world_frame_, node_->now());
 
     // Output as pcl mesh.
     pcl::PolygonMesh polygon_mesh;
     toConnectedPCLPolygonMesh(*mesh_layer, tsdf_world_frame_, &polygon_mesh);
-    pcl_msgs::PolygonMesh pcl_mesh_msg;
+    pcl_msgs::msg::PolygonMesh pcl_mesh_msg;
     pcl_conversions::fromPCL(polygon_mesh, pcl_mesh_msg);
-    mesh_msg.header.stamp = ros::Time::now();
-    mesh_pcl_mesh_pub_.publish(mesh_msg);
+    mesh_msg.header.stamp = node_->now();
+    mesh_pcl_mesh_pub_->publish(mesh_msg);
 
     if (!tsdf_mesh_output_path_.empty()) {
       if (voxfield::outputMeshLayerAsPly(tsdf_mesh_output_path_, *mesh_layer)) {
-        ROS_INFO_STREAM("Output mesh PLY file to " << tsdf_mesh_output_path_);
+        RCLCPP_INFO_STREAM(
+            node_->get_logger(),
+            "Output mesh PLY file to " << tsdf_mesh_output_path_);
       }
     }
   }
@@ -182,41 +196,44 @@ void SimpleTsdfVisualizer::run(const Layer<TsdfVoxel>& tsdf_layer) {
 }  // namespace voxfield
 
 int main(int argc, char** argv) {
-  ros::init(argc, argv, "visualize_tsdf_node");
-  google::InitGoogleLogging(argv[0]);
-  google::ParseCommandLineFlags(&argc, &argv, false);
-  google::InstallFailureSignalHandler();
+  rclcpp::init(argc, argv);
+  voxfield::initGflagsAndGlog(argc, argv);
 
-  ros::NodeHandle nh_private("~");
+  auto node = std::make_shared<rclcpp::Node>("visualize_tsdf_node");
 
   std::string tsdf_proto_path = "";
-  nh_private.param("tsdf_proto_path", tsdf_proto_path, tsdf_proto_path);
+  voxfield::param(*node, "tsdf_proto_path", tsdf_proto_path);
   if (tsdf_proto_path.empty()) {
-    ROS_FATAL_STREAM(
+    RCLCPP_FATAL_STREAM(
+        node->get_logger(),
         "Please provide a TSDF proto file to visualize using the ros "
         << "parameter: tsdf_proto_path");
-    ros::shutdown();
+    rclcpp::shutdown();
     return 1;
   }
-  ROS_INFO_STREAM("Visualize TSDF grid from " << tsdf_proto_path);
+  RCLCPP_INFO_STREAM(
+      node->get_logger(), "Visualize TSDF grid from " << tsdf_proto_path);
 
-  ROS_INFO_STREAM("Loading...");
+  RCLCPP_INFO_STREAM(node->get_logger(), "Loading...");
   voxfield::Layer<voxfield::TsdfVoxel>::Ptr tsdf_layer;
   if (!voxfield::io::LoadLayer<voxfield::TsdfVoxel>(
           tsdf_proto_path, &tsdf_layer)) {
-    ROS_FATAL_STREAM("Unable to load a TSDF grid from: " << tsdf_proto_path);
-    ros::shutdown();
+    RCLCPP_FATAL_STREAM(
+        node->get_logger(),
+        "Unable to load a TSDF grid from: " << tsdf_proto_path);
+    rclcpp::shutdown();
     return 1;
   }
   CHECK(tsdf_layer);
-  ROS_INFO_STREAM("Done.");
+  RCLCPP_INFO_STREAM(node->get_logger(), "Done.");
 
-  ROS_INFO_STREAM("Visualizing...");
-  voxfield::SimpleTsdfVisualizer visualizer(nh_private);
+  RCLCPP_INFO_STREAM(node->get_logger(), "Visualizing...");
+  voxfield::SimpleTsdfVisualizer visualizer(node);
   visualizer.run(*tsdf_layer);
-  ROS_INFO_STREAM("Done.");
+  RCLCPP_INFO_STREAM(node->get_logger(), "Done.");
 
-  ros::spin();
+  rclcpp::spin(node);
+  rclcpp::shutdown();
 
   return 0;
 }

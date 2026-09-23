@@ -1,12 +1,11 @@
 #include "voxfield_ros/intensity_server.h"
 
+#include "voxfield_ros/param_utils.h"
+
 namespace voxfield {
 
-IntensityServer::IntensityServer(
-    const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
-    : TsdfServer(nh, nh_private),
-      focal_length_px_(400.0f),
-      subsample_factor_(12) {
+IntensityServer::IntensityServer(rclcpp::Node::SharedPtr node)
+    : TsdfServer(node), focal_length_px_(400.0f), subsample_factor_(12) {
   cache_mesh_ = true;
 
   intensity_layer_.reset(new Layer<IntensityVoxel>(
@@ -16,37 +15,37 @@ IntensityServer::IntensityServer(
       tsdf_map_->getTsdfLayer(), intensity_layer_.get()));
 
   // Get ROS params:
-  nh_private_.param(
-      "intensity_focal_length", focal_length_px_, focal_length_px_);
-  nh_private_.param("subsample_factor", subsample_factor_, subsample_factor_);
+  param(*node_, "intensity_focal_length", focal_length_px_);
+  param(*node_, "subsample_factor", subsample_factor_);
 
   float intensity_min_value = 10.0f;
   float intensity_max_value = 40.0f;
-  nh_private_.param(
-      "intensity_min_value", intensity_min_value, intensity_min_value);
-  nh_private_.param(
-      "intensity_max_value", intensity_max_value, intensity_max_value);
+  param(*node_, "intensity_min_value", intensity_min_value);
+  param(*node_, "intensity_max_value", intensity_max_value);
 
   FloatingPoint intensity_max_distance =
       intensity_integrator_->getMaxDistance();
-  nh_private_.param(
-      "intensity_max_distance", intensity_max_distance, intensity_max_distance);
+  param(*node_, "intensity_max_distance", intensity_max_distance);
   intensity_integrator_->setMaxDistance(intensity_max_distance);
 
   // Publishers for output.
+  const rclcpp::QoS kLatchedQos = rclcpp::QoS(1).transient_local().reliable();
   intensity_pointcloud_pub_ =
-      nh_private_.advertise<pcl::PointCloud<pcl::PointXYZI> >(
-          "intensity_pointcloud", 1, true);
-  intensity_mesh_pub_ =
-      nh_private_.advertise<voxfield_msgs::Mesh>("intensity_mesh", 1, true);
+      node_->create_publisher<sensor_msgs::msg::PointCloud2>(
+          "~/intensity_pointcloud", kLatchedQos);
+  intensity_mesh_pub_ = node_->create_publisher<voxfield_msgs::msg::Mesh>(
+      "~/intensity_mesh", kLatchedQos);
 
   color_map_.reset(new IronbowColorMap());
   color_map_->setMinValue(intensity_min_value);
   color_map_->setMaxValue(intensity_max_value);
 
   // Set up subscriber.
-  intensity_image_sub_ = nh_private_.subscribe(
-      "intensity_image", 1, &IntensityServer::intensityImageCallback, this);
+  intensity_image_sub_ = node_->create_subscription<sensor_msgs::msg::Image>(
+      "~/intensity_image", rclcpp::QoS(1),
+      std::bind(
+          &IntensityServer::intensityImageCallback, this,
+          std::placeholders::_1));
 }
 
 void IntensityServer::updateMesh() {
@@ -56,7 +55,7 @@ void IntensityServer::updateMesh() {
   timing::Timer publish_mesh_timer("intensity_mesh/publish");
   recolorVoxbloxMeshMsgByIntensity(
       *intensity_layer_, color_map_, &cached_mesh_msg_);
-  intensity_mesh_pub_.publish(cached_mesh_msg_);
+  intensity_mesh_pub_->publish(cached_mesh_msg_);
   publish_mesh_timer.Stop();
 }
 
@@ -66,22 +65,25 @@ void IntensityServer::publishPointclouds() {
 
   createIntensityPointcloudFromIntensityLayer(*intensity_layer_, &pointcloud);
 
-  pointcloud.header.frame_id = world_frame_;
-  intensity_pointcloud_pub_.publish(pointcloud);
+  publishPclCloud(
+      intensity_pointcloud_pub_, pointcloud, world_frame_, node_->now());
 
   TsdfServer::publishPointclouds();
 }
 
 void IntensityServer::intensityImageCallback(
-    const sensor_msgs::ImageConstPtr& image) {
+    const sensor_msgs::msg::Image::ConstSharedPtr image) {
   CHECK(intensity_layer_);
   CHECK(intensity_integrator_);
   CHECK(image);
   // Look up transform first...
   Transformation T_G_C;
   if (!transformer_.lookupTransform(
-          image->header.frame_id, world_frame_, image->header.stamp, &T_G_C)) {
-    ROS_WARN_THROTTLE(10, "Failed to look up intensity transform!");
+          image->header.frame_id, world_frame_,
+          rclcpp::Time(image->header.stamp, RCL_ROS_TIME), &T_G_C)) {
+    RCLCPP_WARN_THROTTLE(
+        node_->get_logger(), *node_->get_clock(), 10000,
+        "Failed to look up intensity transform!");
     return;
   }
 

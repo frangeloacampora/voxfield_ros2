@@ -1,22 +1,17 @@
 #include <deque>
 
 #include <gflags/gflags.h>
-#include <minkindr_conversions/kindr_msg.h>
-#include <minkindr_conversions/kindr_tf.h>
-#include <minkindr_conversions/kindr_xml.h>
+#include <pcl/common/transforms.h>
 #include <pcl/conversions.h>
 #include <pcl/filters/filter.h>
 #include <pcl/io/ply_io.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl_ros/point_cloud.h>
-#include <pcl_ros/transforms.h>
-#include <ros/ros.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <std_srvs/Empty.h>
-#include <tf/transform_listener.h>
-#include <visualization_msgs/MarkerArray.h>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <std_srvs/srv/empty.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 #include <voxfield/core/esdf_map.h>
 #include <voxfield/core/occupancy_map.h>
@@ -30,6 +25,8 @@
 #include <voxfield/mesh/mesh_integrator.h>
 
 #include "voxfield_ros/mesh_vis.h"
+#include "voxfield_ros/node_main.h"
+#include "voxfield_ros/param_utils.h"
 #include "voxfield_ros/ptcloud_vis.h"
 
 // This binary evaluates a pre-built voxblox map against a provided ground
@@ -38,8 +35,7 @@ namespace voxfield {
 
 class VoxbloxEvaluator {
  public:
-  VoxbloxEvaluator(
-      const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
+  explicit VoxbloxEvaluator(rclcpp::Node::SharedPtr node);
   void evaluate();
   void visualize();
   void evaluateEsdf();
@@ -50,8 +46,7 @@ class VoxbloxEvaluator {
   }
 
  private:
-  ros::NodeHandle nh_;
-  ros::NodeHandle nh_private_;
+  rclcpp::Node::SharedPtr node_;
 
   // Whether to do the visualizations (involves generating mesh of the TSDF
   // layer) and keep alive (for visualization) after finishing the eval.
@@ -80,11 +75,13 @@ class VoxbloxEvaluator {
   Transformation T_V_G_;
 
   // Visualization publishers.
-  ros::Publisher mesh_pub_;
-  // ros::Publisher mesh_esdf_pub_;
-  ros::Publisher gt_ptcloud_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
+      mesh_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      gt_ptcloud_pub_;
   // slice publisher
-  ros::Publisher esdf_error_slice_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      esdf_error_slice_pub_;
 
   // Core data to compare.
   std::shared_ptr<Layer<TsdfVoxel>> tsdf_layer_;
@@ -104,10 +101,8 @@ class VoxbloxEvaluator {
   std::shared_ptr<MeshIntegrator<TsdfVoxel>> mesh_integrator_;
 };
 
-VoxbloxEvaluator::VoxbloxEvaluator(
-    const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
-    : nh_(nh),
-      nh_private_(nh_private),
+VoxbloxEvaluator::VoxbloxEvaluator(rclcpp::Node::SharedPtr node)
+    : node_(node),
       visualize_(true),
       recolor_by_error_(false),
       frame_id_("world"),
@@ -117,47 +112,42 @@ VoxbloxEvaluator::VoxbloxEvaluator(
       error_limit_m_(0.2),
       eval_only_positive_(false) {
   // Load parameters.
-  nh_private_.param("visualize", visualize_, visualize_);
-  nh_private_.param("recolor_by_error", recolor_by_error_, recolor_by_error_);
-  nh_private_.param("frame_id", frame_id_, frame_id_);
-  nh_private_.param("eval_esdf", eval_esdf_, eval_esdf_);
-  nh_private_.param("use_occ_ref", use_occ_ref_esdf_, use_occ_ref_esdf_);
-  nh_private_.param("slice_level", slice_level_, slice_level_);
-  nh_private_.param("error_limit_m", error_limit_m_, error_limit_m_);
-  nh_private_.param(
-      "eval_only_positive", eval_only_positive_, eval_only_positive_);
+  param(*node_, "visualize", visualize_);
+  param(*node_, "recolor_by_error", recolor_by_error_);
+  param(*node_, "frame_id", frame_id_);
+  param(*node_, "eval_esdf", eval_esdf_);
+  param(*node_, "use_occ_ref", use_occ_ref_esdf_);
+  param(*node_, "slice_level", slice_level_);
+  param(*node_, "error_limit_m", error_limit_m_);
+  param(*node_, "eval_only_positive", eval_only_positive_);
 
   // Load transformations.
-  XmlRpc::XmlRpcValue T_V_G_xml;
-  if (nh_private_.getParam("T_V_G", T_V_G_xml)) {
-    kindr::minimal::xmlRpcToKindr(T_V_G_xml, &T_V_G_);
-    bool invert_static_tranform = false;
-    nh_private_.param(
-        "invert_T_V_G", invert_static_tranform, invert_static_tranform);
-    if (invert_static_tranform) {
-      T_V_G_ = T_V_G_.inverse();
-    }
-  }
+  getTransformationParam(*node_, "T_V_G", "invert_T_V_G", &T_V_G_);
 
   // Load the actual map and GT.
   // Just exit if there's any issues here (this is just an evaluation node,
   // after all).
-  std::string voxblox_file_path, gt_file_path;
+  const std::string voxblox_file_path =
+      getParam<std::string>(*node_, "voxblox_file_path", "");
+  const std::string gt_file_path =
+      getParam<std::string>(*node_, "gt_file_path", "");
   std::string voxblox_esdf_file_path, voxblox_occ_file_path;
-  CHECK(nh_private_.getParam("voxblox_file_path", voxblox_file_path))
+  CHECK(!voxblox_file_path.empty())
       << "No file path provided for voxblox map! Set the \"voxblox_file_path\" "
          "param.";
-  CHECK(nh_private_.getParam("gt_file_path", gt_file_path))
+  CHECK(!gt_file_path.empty())
       << "No file path provided for ground truth pointcloud! Set the "
          "\"gt_file_path\" param.";
   if (eval_esdf_) {
-    CHECK(
-        nh_private_.getParam("voxblox_esdf_file_path", voxblox_esdf_file_path))
+    voxblox_esdf_file_path =
+        getParam<std::string>(*node_, "voxblox_esdf_file_path", "");
+    CHECK(!voxblox_esdf_file_path.empty())
         << "No file path provided for voxblox esdf map! Set the "
            "\"voxblox_esdf_file_path\" param.";
     if (use_occ_ref_esdf_) {
-      CHECK(
-          nh_private_.getParam("voxblox_occ_file_path", voxblox_occ_file_path))
+      voxblox_occ_file_path =
+          getParam<std::string>(*node_, "voxblox_occ_file_path", "");
+      CHECK(!voxblox_occ_file_path.empty())
           << "No file path provided for voxblox occ map! Set the "
              "\"voxblox_occ_file_path\" param.";
     }
@@ -190,16 +180,18 @@ VoxbloxEvaluator::VoxbloxEvaluator(
 
   // If doing visualizations, initialize the publishers.
   if (visualize_) {
-    mesh_pub_ =
-        nh_private_.advertise<visualization_msgs::MarkerArray>("mesh", 1, true);
-    gt_ptcloud_pub_ = nh_private_.advertise<pcl::PointCloud<pcl::PointXYZRGB>>(
-        "gt_ptcloud", 1, true);
+    const rclcpp::QoS kLatchedQos =
+        rclcpp::QoS(1).transient_local().reliable();
+    mesh_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(
+        "~/mesh", kLatchedQos);
+    gt_ptcloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(
+        "~/gt_ptcloud", kLatchedQos);
     esdf_error_slice_pub_ =
-        nh_private_.advertise<pcl::PointCloud<pcl::PointXYZI>>(
-            "esdf_error_slice", 1, true);
+        node_->create_publisher<sensor_msgs::msg::PointCloud2>(
+            "~/esdf_error_slice", kLatchedQos);
 
     std::string color_mode("color");
-    nh_private_.param("color_mode", color_mode, color_mode);
+    param(*node_, "color_mode", color_mode);
     if (color_mode == "color") {
       color_mode_ = ColorMode::kColor;
     } else if (color_mode == "height") {
@@ -430,14 +422,14 @@ void VoxbloxEvaluator::visualize() {
   mesh_integrator_->generateMesh(only_mesh_updated_blocks, clear_updated_flag);
 
   // Publish mesh.
-  visualization_msgs::MarkerArray marker_array;
+  visualization_msgs::msg::MarkerArray marker_array;
   marker_array.markers.resize(1);
   marker_array.markers[0].header.frame_id = frame_id_;
-  fillMarkerWithMesh(mesh_layer_, color_mode_, &marker_array.markers[0]);
-  mesh_pub_.publish(marker_array);
+  fillMarkerWithMesh(
+      mesh_layer_, color_mode_, &marker_array.markers[0], node_->now());
+  mesh_pub_->publish(marker_array);
 
-  gt_ptcloud_.header.frame_id = frame_id_;
-  gt_ptcloud_pub_.publish(gt_ptcloud_);
+  publishPclCloud(gt_ptcloud_pub_, gt_ptcloud_, frame_id_, node_->now());
   std::cout << "Finished visualizing.\n";
 }
 
@@ -452,25 +444,23 @@ void VoxbloxEvaluator::visualizeEsdf() {
   createDistancePointcloudFromEsdfLayerSlice(
       *esdf_layer_, kZAxisIndex, slice_level_, &pointcloud);
 
-  pointcloud.header.frame_id = frame_id_;
-  esdf_error_slice_pub_.publish(pointcloud);
+  publishPclCloud(esdf_error_slice_pub_, pointcloud, frame_id_, node_->now());
 }
 
 }  // namespace voxfield
 
 int main(int argc, char** argv) {
-  ros::init(argc, argv, "voxblox_node");
-  google::InitGoogleLogging(argv[0]);
-  google::ParseCommandLineFlags(&argc, &argv, false);
-  google::InstallFailureSignalHandler();
-  ros::NodeHandle nh;
-  ros::NodeHandle nh_private("~");
+  rclcpp::init(argc, argv);
+  voxfield::initGflagsAndGlog(argc, argv);
 
-  voxfield::VoxbloxEvaluator eval(nh, nh_private);
+  auto node = std::make_shared<rclcpp::Node>("voxblox_node");
+
+  voxfield::VoxbloxEvaluator eval(node);
   eval.evaluate();
 
   if (!eval.shouldExit()) {
-    ros::spin();
+    rclcpp::spin(node);
   }
+  rclcpp::shutdown();
   return 0;
 }

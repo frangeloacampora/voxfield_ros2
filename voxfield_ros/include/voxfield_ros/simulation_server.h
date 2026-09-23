@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 
 #include <voxfield/core/esdf_map.h>
 #include <voxfield/core/tsdf_map.h>
@@ -24,12 +24,10 @@ namespace voxfield {
 
 class SimulationServer {
  public:
-  SimulationServer(
-      const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
+  explicit SimulationServer(rclcpp::Node::SharedPtr node);
 
   SimulationServer(
-      const ros::NodeHandle& nh, const ros::NodeHandle& nh_private,
-      const EsdfMap::Config& esdf_config,
+      rclcpp::Node::SharedPtr node, const EsdfMap::Config& esdf_config,
       const EsdfIntegrator::Config& esdf_integrator_config,
       const TsdfMap::Config& tsdf_config,
       const TsdfIntegratorBase::Config& tsdf_integrator_config);
@@ -52,25 +50,27 @@ class SimulationServer {
   void visualize();
 
  protected:
-  void getServerConfigFromRosParam(const ros::NodeHandle& nh_private);
+  void getServerConfigFromRosParam();
 
   /// Convenience function to generate valid viewpoints.
   bool generatePlausibleViewpoint(
       FloatingPoint min_distance, Point* ray_origin,
       Point* ray_direction) const;
 
-  ros::NodeHandle nh_;
-  ros::NodeHandle nh_private_;
+  rclcpp::Node::SharedPtr node_;
 
   // A bunch of publishers :)
-  ros::Publisher sim_pub_;
-  ros::Publisher tsdf_gt_pub_;
-  ros::Publisher esdf_gt_pub_;
-  ros::Publisher tsdf_gt_mesh_pub_;
-  ros::Publisher tsdf_test_pub_;
-  ros::Publisher esdf_test_pub_;
-  ros::Publisher tsdf_test_mesh_pub_;
-  ros::Publisher view_ptcloud_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr sim_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr tsdf_gt_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr esdf_gt_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
+      tsdf_gt_mesh_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr tsdf_test_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr esdf_test_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
+      tsdf_test_mesh_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      view_ptcloud_pub_;
 
   // Settings
   FloatingPoint voxel_size_;

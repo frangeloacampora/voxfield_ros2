@@ -8,7 +8,7 @@
 #include <voxfield/core/occupancy_map.h>
 #include <voxfield/integrator/esdf_voxfield_integrator.h>
 #include <voxfield/integrator/occupancy_tsdf_integrator.h>
-#include <voxfield_msgs/Layer.h>
+#include <voxfield_msgs/msg/layer.hpp>
 
 #include "voxfield_ros/np_tsdf_server.h"
 
@@ -18,19 +18,22 @@ class VoxfieldServer : public NpTsdfServer {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  VoxfieldServer(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
+  explicit VoxfieldServer(rclcpp::Node::SharedPtr node);
   VoxfieldServer(
-      const ros::NodeHandle& nh, const ros::NodeHandle& nh_private,
-      const EsdfMap::Config& esdf_config,
+      rclcpp::Node::SharedPtr node, const EsdfMap::Config& esdf_config,
       const EsdfVoxfieldIntegrator::Config& esdf_integrator_config,
       const TsdfMap::Config& tsdf_config,
       const NpTsdfIntegratorBase::Config& tsdf_integrator_config,
       const MeshIntegratorConfig& mesh_config);
   virtual ~VoxfieldServer() {}
 
-  bool generateEsdfCallback(
-      std_srvs::Empty::Request& request,     // NOLINT
-      std_srvs::Empty::Response& response);  // NOLINT
+  // NOTE(ROS2 port): declared but never defined upstream (its body is
+  // commented out in voxfield_server.cc) and never bound to a service in
+  // setupRos(); generate_esdf_srv_ is likewise declared but unused. Kept
+  // exactly as-is per the port's behavior-preservation rule.
+  void generateEsdfCallback(
+      const std::shared_ptr<std_srvs::srv::Empty::Request> request,
+      std::shared_ptr<std_srvs::srv::Empty::Response> response);
 
   void publishAllUpdatedEsdfVoxels();
   virtual void publishSlices();
@@ -43,7 +46,7 @@ class VoxfieldServer : public NpTsdfServer {
   virtual bool saveMap(const std::string& file_path);
   virtual bool loadMap(const std::string& file_path);
 
-  void updateEsdfEvent(const ros::TimerEvent& event);
+  void updateEsdfEvent();
 
   /// Call this to update the ESDF based on latest state of the TSDF map,
   /// considering only the newly updated parts of the TSDF map (checked with
@@ -53,11 +56,11 @@ class VoxfieldServer : public NpTsdfServer {
   void updateEsdfBatch(bool full_euclidean = false);
 
   // Overwrites the layer with what's coming from the topic!
-  void esdfMapCallback(const voxfield_msgs::Layer& layer_msg);
+  void esdfMapCallback(const voxfield_msgs::msg::Layer::SharedPtr layer_msg);
 
-  bool saveEsdfMapCallback(
-      voxfield_msgs::FilePath::Request& request,     // NOLINT
-      voxfield_msgs::FilePath::Response& response);  // NOLINT
+  void saveEsdfMapCallback(
+      const std::shared_ptr<voxfield_msgs::srv::FilePath::Request> request,
+      std::shared_ptr<voxfield_msgs::srv::FilePath::Response> response);
 
   inline std::shared_ptr<EsdfMap> getEsdfMapPtr() {
     return esdf_map_;
@@ -92,7 +95,7 @@ class VoxfieldServer : public NpTsdfServer {
 
   // py: added
   void updateOccFromTsdf();
-  void evalEsdfEvent(const ros::TimerEvent& event);
+  void evalEsdfEvent();
   void evalEsdfRefOcc();
   void visualizeEsdfError();
 
@@ -102,24 +105,28 @@ class VoxfieldServer : public NpTsdfServer {
   void setupRos();
 
   /// Publish markers for visualization.
-  ros::Publisher esdf_pointcloud_pub_;
-  ros::Publisher esdf_slice_pub_;
-  ros::Publisher traversable_pub_;
-  ros::Publisher esdf_error_slice_pub_;  // py: added
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      esdf_pointcloud_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      esdf_slice_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      traversable_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      esdf_error_slice_pub_;  // py: added
 
   /// Publish the complete map for other nodes to consume.
-  ros::Publisher esdf_map_pub_;
+  rclcpp::Publisher<voxfield_msgs::msg::Layer>::SharedPtr esdf_map_pub_;
 
   /// Subscriber to subscribe to another node generating the map.
-  ros::Subscriber esdf_map_sub_;
+  rclcpp::Subscription<voxfield_msgs::msg::Layer>::SharedPtr esdf_map_sub_;
 
   /// Services.
-  ros::ServiceServer generate_esdf_srv_;
-  ros::ServiceServer save_esdf_map_srv_;
+  rclcpp::Service<std_srvs::srv::Empty>::SharedPtr generate_esdf_srv_;
+  rclcpp::Service<voxfield_msgs::srv::FilePath>::SharedPtr save_esdf_map_srv_;
 
   /// Timers.
-  ros::Timer update_esdf_timer_;
-  ros::Timer eval_esdf_timer_;
+  rclcpp::TimerBase::SharedPtr update_esdf_timer_;
+  rclcpp::TimerBase::SharedPtr eval_esdf_timer_;
 
   bool clear_sphere_for_planning_;
   bool publish_esdf_map_;

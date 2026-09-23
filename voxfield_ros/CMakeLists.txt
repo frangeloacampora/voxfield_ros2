@@ -69,6 +69,12 @@ add_library(${PROJECT_NAME}
   src/transformer.cc
   src/tsdf_server.cc
   src/np_tsdf_server.cc
+  src/voxfield_server.cc
+  src/voxblox_server.cc
+  src/fiesta_server.cc
+  src/voxedt_server.cc
+  src/intensity_server.cc
+  src/simulation_server.cc
 )
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -87,15 +93,49 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${PCL_INCLUDE_DIRS} ${OpenCV_I
 ##############
 # EXECUTABLES #
 ##############
-# Phase 6 mains. Phase 7 adds the remaining *_server / eval / tool mains.
+# Phase 6 + 7 mains.
 add_executable(tsdf_server src/tsdf_server_node.cc)
 target_link_libraries(tsdf_server ${PROJECT_NAME})
 
 add_executable(np_tsdf_server src/np_tsdf_server_node.cc)
 target_link_libraries(np_tsdf_server ${PROJECT_NAME})
 
+add_executable(voxfield_server src/voxfield_server_node.cc)
+target_link_libraries(voxfield_server ${PROJECT_NAME})
+
+add_executable(voxblox_server src/voxblox_server_node.cc)
+target_link_libraries(voxblox_server ${PROJECT_NAME})
+
+add_executable(fiesta_server src/fiesta_server_node.cc)
+target_link_libraries(fiesta_server ${PROJECT_NAME})
+
+add_executable(voxedt_server src/voxedt_server_node.cc)
+target_link_libraries(voxedt_server ${PROJECT_NAME})
+
+add_executable(intensity_server src/intensity_server_node.cc)
+target_link_libraries(intensity_server ${PROJECT_NAME})
+
+add_executable(simulation_eval src/simulation_eval.cc)
+target_link_libraries(simulation_eval ${PROJECT_NAME})
+
+add_executable(voxblox_eval src/voxblox_eval.cc)
+target_link_libraries(voxblox_eval ${PROJECT_NAME})
+
+add_executable(visualize_tsdf src/visualize_tsdf.cc)
+target_link_libraries(visualize_tsdf ${PROJECT_NAME})
+
 install(
-  TARGETS tsdf_server np_tsdf_server
+  TARGETS
+    tsdf_server
+    np_tsdf_server
+    voxfield_server
+    voxblox_server
+    fiesta_server
+    voxedt_server
+    intensity_server
+    simulation_eval
+    voxblox_eval
+    visualize_tsdf
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 

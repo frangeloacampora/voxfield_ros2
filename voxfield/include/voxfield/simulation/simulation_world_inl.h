@@ -69,8 +69,15 @@ void SimulationWorld::generateSdfFromWorld(
   }
 }
 
+// NOTE(ROS2 port): these full specializations are defined in this header,
+// so they need `inline` -- without it, any two translation units that both
+// include this header (directly or transitively) and get linked into the
+// same binary hit an ODR "multiple definition" link error. This was latent
+// since Phase 3 (nothing had linked two such TUs together until Phase 7's
+// simulation_eval, which links simulation_server.cc's object code together
+// with simulation_eval.cc, both of which include this header).
 template <>
-void SimulationWorld::setVoxel(
+inline void SimulationWorld::setVoxel(
     FloatingPoint dist, const Color& color, TsdfVoxel* voxel) const {
   voxel->distance = static_cast<float>(dist);
   voxel->color = color;
@@ -79,7 +86,7 @@ void SimulationWorld::setVoxel(
 
 // Color ignored.
 template <>
-void SimulationWorld::setVoxel(
+inline void SimulationWorld::setVoxel(
     FloatingPoint dist, const Color& /*color*/, EsdfVoxel* voxel) const {
   voxel->distance = static_cast<float>(dist);
   voxel->observed = true;
