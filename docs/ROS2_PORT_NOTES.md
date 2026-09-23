@@ -104,6 +104,18 @@ scheduled for a later phase:
 - **This plan document:** `ROS2_PORT_PLAN.md` intentionally documents the
   rename using the old names throughout; not touched.
 
+## Phase 2: minkindr vendoring
+
+Per plan §4 D3, vendored (not a separate colcon package, to avoid colliding
+with the Hector-provided `minkindr` package, §2.1):
+- Source: `https://github.com/tu-darmstadt-ros-pkg/voxblox_ros2`, branch
+  `ros2`, commit `9ed1e1a92e882089e9835cd74771a43e6cd4d35e` (2026-06-28),
+  `minkindr/` subdirectory — plan's preference (1). Copied `include/` and
+  `LICENSE` verbatim (BSD, ETH Zurich ASL, 2015) into
+  `voxfield/third_party/minkindr/`; did not copy its `CMakeLists.txt` or
+  `package.xml`, so `third_party/` cannot be picked up as its own colcon
+  package. `kindr::minimal` namespace left unchanged.
+
 ### Map-file wire-compatibility
 Protobuf message names (`BlockProto`, `LayerProto`) and field numbers are
 unchanged, so `.vxblx`/`.tsdf` files written by ROS 1 voxfield/voxblox should
