@@ -277,8 +277,11 @@ inline void fillMarkerWithMesh(
     }
 
     for (size_t i = 0u; i < mesh->vertices.size(); i++) {
-      const geometry_msgs::msg::Point point_msg =
-          tf2::toMsg(mesh->vertices[i].cast<double>());
+      // Eigen::Vector3d disambiguates tf2::toMsg() overload resolution: the
+      // raw cast<double>() expression template implicitly converts to both
+      // the Vector3d and the Matrix<double, 6, 1> overloads.
+      const Eigen::Vector3d vertex_d = mesh->vertices[i].cast<double>();
+      const geometry_msgs::msg::Point point_msg = tf2::toMsg(vertex_d);
       marker->points.push_back(point_msg);
       marker->colors.push_back(getVertexColor(mesh, color_mode, i));
     }

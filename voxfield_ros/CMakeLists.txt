@@ -60,13 +60,15 @@ set(VOXFIELD_ROS_DEPENDENCIES
 #############
 # LIBRARIES #
 #############
-# Phase 5: infra only (param_utils.h, kindr_conversions.h, ros_params.h,
-# conversions.h, the *_vis.h headers, node_main.h are header-only; the two
-# infra .cc files below are the only sources so far). Server sources are
-# added in Phases 6-7.
+# Phase 5: infra (param_utils.h, kindr_conversions.h, ros_params.h,
+# conversions.h, the *_vis.h headers, node_main.h are header-only).
+# Phase 6: TsdfServer + NpTsdfServer. Remaining derived servers/tools are
+# added in Phase 7.
 add_library(${PROJECT_NAME}
   src/interactive_slider.cc
   src/transformer.cc
+  src/tsdf_server.cc
+  src/np_tsdf_server.cc
 )
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -81,6 +83,21 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
   ${GFLAGS_LIBRARIES}
 )
 target_include_directories(${PROJECT_NAME} PUBLIC ${PCL_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
+
+##############
+# EXECUTABLES #
+##############
+# Phase 6 mains. Phase 7 adds the remaining *_server / eval / tool mains.
+add_executable(tsdf_server src/tsdf_server_node.cc)
+target_link_libraries(tsdf_server ${PROJECT_NAME})
+
+add_executable(np_tsdf_server src/np_tsdf_server_node.cc)
+target_link_libraries(np_tsdf_server ${PROJECT_NAME})
+
+install(
+  TARGETS tsdf_server np_tsdf_server
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
 
 #########
 # TESTS #

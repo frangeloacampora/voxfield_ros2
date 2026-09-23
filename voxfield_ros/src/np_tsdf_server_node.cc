@@ -1,17 +1,15 @@
 #include "voxfield_ros/np_tsdf_server.h"
 
-#include <gflags/gflags.h>
+#include "voxfield_ros/node_main.h"
 
 int main(int argc, char** argv) {
-  ros::init(argc, argv, "voxfield");
-  google::InitGoogleLogging(argv[0]);
-  google::ParseCommandLineFlags(&argc, &argv, false);
-  google::InstallFailureSignalHandler();
-  ros::NodeHandle nh;
-  ros::NodeHandle nh_private("~");
+  rclcpp::init(argc, argv);
+  voxfield::initGflagsAndGlog(argc, argv);
 
-  voxfield::NpTsdfServer node(nh, nh_private);
+  auto node = std::make_shared<rclcpp::Node>("voxfield");
+  voxfield::NpTsdfServer server(node);
 
-  ros::spin();
+  rclcpp::spin(node);
+  rclcpp::shutdown();
   return 0;
 }
