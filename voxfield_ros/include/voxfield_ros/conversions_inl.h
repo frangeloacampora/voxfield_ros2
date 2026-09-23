@@ -2,7 +2,6 @@
 #define VOXFIELD_ROS_CONVERSIONS_INL_H_
 
 #include <vector>
-
 #include <voxfield_msgs/msg/block.hpp>
 
 namespace voxfield {

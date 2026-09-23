@@ -37,11 +37,11 @@ Transformer::Transformer(rclcpp::Node::SharedPtr node)
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
   if (!use_tf_transforms_) {
-    transform_sub_ = node_->create_subscription<
-        geometry_msgs::msg::TransformStamped>(
-        "transform", rclcpp::QoS(40),
-        std::bind(
-            &Transformer::transformCallback, this, std::placeholders::_1));
+    transform_sub_ =
+        node_->create_subscription<geometry_msgs::msg::TransformStamped>(
+            "transform", rclcpp::QoS(40),
+            std::bind(
+                &Transformer::transformCallback, this, std::placeholders::_1));
     // Retrieve T_D_C from params.
     getTransformationParam(*node_, "T_B_D", "invert_T_B_D", &T_B_D_);
     getTransformationParam(*node_, "T_B_C", "invert_T_B_C", &T_B_C_);
@@ -153,12 +153,12 @@ bool Transformer::lookupTransformQueue(
           node_->get_logger(), *node_->get_clock(), 30000,
           "No match found for transform timestamp: "
               << timestamp.nanoseconds() << " Queue front: "
-              << rclcpp::Time(transform_queue_.front().header.stamp,
-                               RCL_ROS_TIME)
+              << rclcpp::Time(
+                     transform_queue_.front().header.stamp, RCL_ROS_TIME)
                      .nanoseconds()
               << " back: "
-              << rclcpp::Time(transform_queue_.back().header.stamp,
-                               RCL_ROS_TIME)
+              << rclcpp::Time(
+                     transform_queue_.back().header.stamp, RCL_ROS_TIME)
                      .nanoseconds());
       return false;
     }

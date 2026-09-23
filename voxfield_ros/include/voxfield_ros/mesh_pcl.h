@@ -25,12 +25,10 @@
 #ifndef VOXFIELD_ROS_MESH_PCL_H_
 #define VOXFIELD_ROS_MESH_PCL_H_
 
-#include <string>
-#include <vector>
-
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
-
+#include <string>
+#include <vector>
 #include <voxfield/core/common.h>
 #include <voxfield/mesh/mesh_layer.h>
 
@@ -54,9 +52,10 @@ inline void toPCLPolygonMesh(
   // add points
   pointcloud.reserve(mesh.vertices.size());
   for (const Point& point : mesh.vertices) {
-    pointcloud.push_back(pcl::PointXYZ(
-        static_cast<float>(point[0]), static_cast<float>(point[1]),
-        static_cast<float>(point[2])));
+    pointcloud.push_back(
+        pcl::PointXYZ(
+            static_cast<float>(point[0]), static_cast<float>(point[1]),
+            static_cast<float>(point[2])));
   }
   // add triangles
   pcl::Vertices vertices_idx;

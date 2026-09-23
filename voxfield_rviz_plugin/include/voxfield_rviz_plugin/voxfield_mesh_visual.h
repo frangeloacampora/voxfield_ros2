@@ -1,12 +1,10 @@
 #ifndef VOXFIELD_RVIZ_PLUGIN_VOXFIELD_MESH_VISUAL_H_
 #define VOXFIELD_RVIZ_PLUGIN_VOXFIELD_MESH_VISUAL_H_
 
+#include <OgreManualObject.h>
 #include <limits>
 #include <map>
 #include <string>
-
-#include <OgreManualObject.h>
-
 #include <voxfield/core/block_hash.h>
 #include <voxfield_msgs/msg/mesh.hpp>
 #include <voxfield_msgs/msg/multi_mesh.hpp>

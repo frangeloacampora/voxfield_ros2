@@ -1,9 +1,8 @@
 #ifndef VOXFIELD_IO_LAYER_IO_H_
 #define VOXFIELD_IO_LAYER_IO_H_
 
-#include <string>
-
 #include <glog/logging.h>
+#include <string>
 
 #include "voxfield/core/common.h"
 #include "voxfield/core/layer.h"

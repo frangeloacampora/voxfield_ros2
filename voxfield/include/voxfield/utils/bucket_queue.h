@@ -2,10 +2,9 @@
 #define VOXFIELD_UTILS_BUCKET_QUEUE_H_
 
 #include <deque>
+#include <glog/logging.h>
 #include <queue>
 #include <vector>
-
-#include <glog/logging.h>
 
 #include "voxfield/core/common.h"
 

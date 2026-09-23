@@ -2,16 +2,15 @@
 #define VOXFIELD_CORE_LAYER_INL_H_
 
 #include <fstream>  // NOLINT
-#include <limits>
-#include <string>
-#include <utility>
-
 #include <glog/logging.h>
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/message.h>
 #include <google/protobuf/message_lite.h>
+#include <limits>
+#include <string>
+#include <utility>
 
 #include "voxfield/Block.pb.h"
 #include "voxfield/Layer.pb.h"

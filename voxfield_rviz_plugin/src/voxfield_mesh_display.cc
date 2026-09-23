@@ -2,7 +2,6 @@
 
 #include <OgreSceneManager.h>
 #include <OgreSceneNode.h>
-
 #include <rviz_common/display_context.hpp>
 #include <rviz_common/frame_manager_iface.hpp>
 #include <rviz_common/logging.hpp>
@@ -61,10 +60,9 @@ bool VoxfieldMeshDisplay::updateTransformation(rclcpp::Time stamp) {
   if (!context_->getFrameManager()->getTransform(
           visual_->getFrameId(), stamp, position, orientation)) {
     RVIZ_COMMON_LOG_DEBUG_STREAM(
-        "Error transforming from frame '" << visual_->getFrameId()
-                                           << "' to frame '"
-                                           << fixed_frame_.toStdString()
-                                           << "'");
+        "Error transforming from frame '"
+        << visual_->getFrameId() << "' to frame '" << fixed_frame_.toStdString()
+        << "'");
     return false;
   }
   visual_->setPose(position, orientation);

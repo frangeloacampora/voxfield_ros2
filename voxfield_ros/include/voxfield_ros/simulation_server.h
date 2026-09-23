@@ -2,10 +2,8 @@
 #define VOXFIELD_ROS_SIMULATION_SERVER_H_
 
 #include <memory>
-#include <string>
-
 #include <rclcpp/rclcpp.hpp>
-
+#include <string>
 #include <voxfield/core/esdf_map.h>
 #include <voxfield/core/tsdf_map.h>
 #include <voxfield/integrator/esdf_integrator.h>
@@ -69,8 +67,7 @@ class SimulationServer {
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr esdf_test_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
       tsdf_test_mesh_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-      view_ptcloud_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr view_ptcloud_pub_;
 
   // Settings
   FloatingPoint voxel_size_;

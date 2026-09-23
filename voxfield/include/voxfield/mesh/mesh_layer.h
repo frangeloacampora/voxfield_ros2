@@ -2,12 +2,11 @@
 #define VOXFIELD_MESH_MESH_LAYER_H_
 
 #include <cmath>
+#include <glog/logging.h>
 #include <iostream>
 #include <memory>
 #include <utility>
 #include <vector>
-
-#include <glog/logging.h>
 
 #include "voxfield/core/block_hash.h"
 #include "voxfield/core/common.h"
@@ -109,9 +108,11 @@ class MeshLayer {
   }
 
   typename Mesh::Ptr allocateNewBlock(const BlockIndex& index) {
-    auto insert_status = mesh_map_.insert(std::make_pair(
-        index, std::shared_ptr<Mesh>(new Mesh(
-                   block_size_, index.cast<FloatingPoint>() * block_size_))));
+    auto insert_status = mesh_map_.insert(
+        std::make_pair(
+            index,
+            std::shared_ptr<Mesh>(new Mesh(
+                block_size_, index.cast<FloatingPoint>() * block_size_))));
     DCHECK(insert_status.second)
         << "Mesh already exists when allocating at " << index.transpose();
     DCHECK(insert_status.first->second);

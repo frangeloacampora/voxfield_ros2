@@ -1,6 +1,5 @@
-#include <iostream>  // NOLINT
-
 #include <gtest/gtest.h>
+#include <iostream>  // NOLINT
 
 #include "voxfield/Block.pb.h"
 #include "voxfield/Layer.pb.h"
@@ -231,9 +230,10 @@ TEST_F(ProtobufTsdfTest, LayerSubsetSerializationFromFile) {
   layer_with_blocks_from_file.allocateNewBlock(block_index_4);
 
   // Now load the blocks from the file layer and add it.
-  ASSERT_TRUE(io::LoadBlocksFromFile<TsdfVoxel>(
-      file, Layer<TsdfVoxel>::BlockMergingStrategy::kProhibit,
-      &layer_with_blocks_from_file));
+  ASSERT_TRUE(
+      io::LoadBlocksFromFile<TsdfVoxel>(
+          file, Layer<TsdfVoxel>::BlockMergingStrategy::kProhibit,
+          &layer_with_blocks_from_file));
 
   // Add those blocks to the layer for comparison.
   layer_->allocateNewBlock(block_index_1);
@@ -260,12 +260,14 @@ TEST_F(ProtobufTsdfTest, MultipleLayerSerialization) {
 
   constexpr bool multiple_layer_support = true;
   Layer<TsdfVoxel>::Ptr tsdf_layer_from_file;
-  ASSERT_TRUE(io::LoadLayer<TsdfVoxel>(
-      file, multiple_layer_support, &tsdf_layer_from_file));
+  ASSERT_TRUE(
+      io::LoadLayer<TsdfVoxel>(
+          file, multiple_layer_support, &tsdf_layer_from_file));
 
   Layer<EsdfVoxel>::Ptr esdf_layer_from_file;
-  ASSERT_TRUE(io::LoadLayer<EsdfVoxel>(
-      file, multiple_layer_support, &esdf_layer_from_file));
+  ASSERT_TRUE(
+      io::LoadLayer<EsdfVoxel>(
+          file, multiple_layer_support, &esdf_layer_from_file));
 
   CompareLayers(*layer_, *tsdf_layer_from_file);
   esdf_test.CompareLayers(*esdf_layer, *esdf_layer_from_file);

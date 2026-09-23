@@ -143,8 +143,9 @@ void SimulationWorld::getNoisyPointcloudFromViewpoint(
   // Calculate transformation between nominal camera view direction and our
   // view direction. Nominal view is positive x direction.
   const Point nominal_view_direction(1.0, 0.0, 0.0);
-  const Rotation ray_rotation(Eigen::Quaternion<FloatingPoint>::FromTwoVectors(
-      nominal_view_direction, view_direction));
+  const Rotation ray_rotation(
+      Eigen::Quaternion<FloatingPoint>::FromTwoVectors(
+          nominal_view_direction, view_direction));
 
   // Now actually iterate over all pixels.
   for (int u = -camera_res.x() / 2; u < camera_res.x() / 2; ++u) {

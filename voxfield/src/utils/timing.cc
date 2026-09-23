@@ -17,16 +17,15 @@
 
 /* Adapted from Paul Furgale Schweizer Messer sm_timing*/
 
+#include "voxfield/utils/timing.h"
+
 #include <algorithm>
+#include <glog/logging.h>
 #include <math.h>
 #include <ostream>
 #include <sstream>
 #include <stdio.h>
 #include <string>
-
-#include <glog/logging.h>
-
-#include "voxfield/utils/timing.h"
 
 namespace voxfield {
 

@@ -1,11 +1,10 @@
 #ifndef VOXFIELD_CORE_LAYER_H_
 #define VOXFIELD_CORE_LAYER_H_
 
+#include <glog/logging.h>
 #include <memory>
 #include <string>
 #include <utility>
-
-#include <glog/logging.h>
 
 #include "voxfield/Block.pb.h"
 #include "voxfield/Layer.pb.h"

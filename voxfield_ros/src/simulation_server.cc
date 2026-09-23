@@ -1,7 +1,6 @@
 #include "voxfield_ros/simulation_server.h"
 
 #include <rclcpp/rclcpp.hpp>
-
 #include <voxfield/core/esdf_map.h>
 #include <voxfield/core/tsdf_map.h>
 #include <voxfield/integrator/esdf_integrator.h>
@@ -28,17 +27,14 @@ void SimulationServer::getServerConfigFromRosParam() {
   param(*node_, "generate_mesh", generate_mesh_);
 
   param(*node_, "visualize", visualize_);
-  param(
-      *node_, "visualization_slice_level", visualization_slice_level_);
+  param(*node_, "visualization_slice_level", visualization_slice_level_);
 
   param(*node_, "generate_occupancy", generate_occupancy_);
   param(*node_, "add_robot_pose", add_robot_pose_);
   param(*node_, "truncation_distance", truncation_distance_);
 
-  param(
-      *node_, "depth_camera_resolution_u", depth_camera_resolution_[0]);
-  param(
-      *node_, "depth_camera_resolution_v", depth_camera_resolution_[1]);
+  param(*node_, "depth_camera_resolution_u", depth_camera_resolution_[0]);
+  param(*node_, "depth_camera_resolution_v", depth_camera_resolution_[1]);
 
   param(*node_, "fov_h_rad", fov_h_rad_);
 
@@ -209,8 +205,8 @@ void SimulationServer::generateSDF() {
     if (!generatePlausibleViewpoint(min_dist_, &view_origin, &view_direction)) {
       RCLCPP_WARN(
           node_->get_logger(),
-          "Could not generate enough viewpoints. Generated: %d, Needed: %d",
-          i, num_viewpoints_);
+          "Could not generate enough viewpoints. Generated: %d, Needed: %d", i,
+          num_viewpoints_);
       break;
     }
 
@@ -255,7 +251,8 @@ void SimulationServer::generateSDF() {
       point.z = view_origin.z();
       ptcloud_pcl.push_back(point);
 
-      publishPclCloud(view_ptcloud_pub_, ptcloud_pcl, world_frame_, node_->now());
+      publishPclCloud(
+          view_ptcloud_pub_, ptcloud_pcl, world_frame_, node_->now());
       rclcpp::spin_some(node_);
     }
   }
@@ -286,8 +283,8 @@ void SimulationServer::evaluate() {
       "TSDF RMSE: " << tsdf_rmse << " ESDF RMSE: " << esdf_rmse);
 
   RCLCPP_INFO_STREAM(
-      node_->get_logger(),
-      "Mesh Timings: " << std::endl << timing::Timing::Print());
+      node_->get_logger(), "Mesh Timings: " << std::endl
+                                            << timing::Timing::Print());
 }
 
 void SimulationServer::visualize() {
@@ -335,7 +332,8 @@ void SimulationServer::visualize() {
     visualization_msgs::msg::MarkerArray marker_array;
     marker_array.markers.resize(1);
     ColorMode color_mode = ColorMode::kNormals;
-    fillMarkerWithMesh(mesh, color_mode, &marker_array.markers[0], node_->now());
+    fillMarkerWithMesh(
+        mesh, color_mode, &marker_array.markers[0], node_->now());
     marker_array.markers[0].header.frame_id = world_frame_;
     tsdf_gt_mesh_pub_->publish(marker_array);
 

@@ -66,16 +66,16 @@ NpTsdfServer::NpTsdfServer(
   param(*node_, "input_qos_best_effort", input_qos_best_effort);
   const rclcpp::QoS pointcloud_qos =
       input_qos_best_effort
-          ? rclcpp::QoS(rclcpp::SensorDataQoS().keep_last(
-                static_cast<size_t>(pointcloud_queue_size_)))
+          ? rclcpp::QoS(
+                rclcpp::SensorDataQoS().keep_last(
+                    static_cast<size_t>(pointcloud_queue_size_)))
           : rclcpp::QoS(pointcloud_queue_size_);
   pointcloud_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
       "pointcloud", pointcloud_qos,
-      std::bind(
-          &NpTsdfServer::insertPointcloud, this, std::placeholders::_1));
+      std::bind(&NpTsdfServer::insertPointcloud, this, std::placeholders::_1));
 
-  mesh_pub_ = node_->create_publisher<voxfield_msgs::msg::Mesh>(
-      "~/mesh", kLatchedQos);
+  mesh_pub_ =
+      node_->create_publisher<voxfield_msgs::msg::Mesh>("~/mesh", kLatchedQos);
 
   // Publishing/subscribing to a layer from another node (when using this as
   // a library, for example within a planner).
@@ -133,35 +133,30 @@ NpTsdfServer::NpTsdfServer(
 
   // Advertise services.
   generate_mesh_srv_ = node_->create_service<std_srvs::srv::Empty>(
-      "~/generate_mesh",
-      std::bind(
-          &NpTsdfServer::generateMeshCallback, this, std::placeholders::_1,
-          std::placeholders::_2));
+      "~/generate_mesh", std::bind(
+                             &NpTsdfServer::generateMeshCallback, this,
+                             std::placeholders::_1, std::placeholders::_2));
   clear_map_srv_ = node_->create_service<std_srvs::srv::Empty>(
-      "~/clear_map",
-      std::bind(
-          &NpTsdfServer::clearMapCallback, this, std::placeholders::_1,
-          std::placeholders::_2));
+      "~/clear_map", std::bind(
+                         &NpTsdfServer::clearMapCallback, this,
+                         std::placeholders::_1, std::placeholders::_2));
   save_map_srv_ = node_->create_service<voxfield_msgs::srv::FilePath>(
-      "~/save_map",
-      std::bind(
-          &NpTsdfServer::saveMapCallback, this, std::placeholders::_1,
-          std::placeholders::_2));
+      "~/save_map", std::bind(
+                        &NpTsdfServer::saveMapCallback, this,
+                        std::placeholders::_1, std::placeholders::_2));
   load_map_srv_ = node_->create_service<voxfield_msgs::srv::FilePath>(
-      "~/load_map",
-      std::bind(
-          &NpTsdfServer::loadMapCallback, this, std::placeholders::_1,
-          std::placeholders::_2));
+      "~/load_map", std::bind(
+                        &NpTsdfServer::loadMapCallback, this,
+                        std::placeholders::_1, std::placeholders::_2));
   publish_pointclouds_srv_ = node_->create_service<std_srvs::srv::Empty>(
       "~/publish_pointclouds",
       std::bind(
           &NpTsdfServer::publishPointcloudsCallback, this,
           std::placeholders::_1, std::placeholders::_2));
   publish_tsdf_map_srv_ = node_->create_service<std_srvs::srv::Empty>(
-      "~/publish_map",
-      std::bind(
-          &NpTsdfServer::publishTsdfMapCallback, this, std::placeholders::_1,
-          std::placeholders::_2));
+      "~/publish_map", std::bind(
+                           &NpTsdfServer::publishTsdfMapCallback, this,
+                           std::placeholders::_1, std::placeholders::_2));
 
   // If set, use a timer to progressively integrate the mesh.
   double update_mesh_every_n_sec = 1.0f;
@@ -195,8 +190,7 @@ void NpTsdfServer::getServerConfigFromRosParam() {
   min_time_between_msgs_ =
       rclcpp::Duration::from_seconds(min_time_between_msgs_sec);
 
-  param(
-      *node_, "max_block_distance_from_body", max_block_distance_from_body_);
+  param(*node_, "max_block_distance_from_body", max_block_distance_from_body_);
   param(*node_, "slice_level", slice_level_);
   param(*node_, "world_frame", world_frame_);
   param(*node_, "sensor_frame", sensor_frame_);
@@ -207,8 +201,7 @@ void NpTsdfServer::getServerConfigFromRosParam() {
   param(*node_, "use_freespace_pointcloud", use_freespace_pointcloud_);
   param(*node_, "pointcloud_queue_size", pointcloud_queue_size_);
   param(*node_, "enable_icp", enable_icp_);
-  param(
-      *node_, "accumulate_icp_corrections", accumulate_icp_corrections_);
+  param(*node_, "accumulate_icp_corrections", accumulate_icp_corrections_);
 
   // Logging
   param(*node_, "verbose", verbose_);
@@ -341,7 +334,8 @@ void NpTsdfServer::processPointCloudMessageAndInsert(
   cv::Mat depth_image(vertex_map.size(), CV_32FC1, -1.0);
   cv::Mat color_image = cv::Mat::zeros(vertex_map.size(), CV_8UC3);
   projectPointCloudToImage(
-      points_C, colors, vertex_map, depth_image, color_image, min_z_, min_dist_);
+      points_C, colors, vertex_map, depth_image, color_image, min_z_,
+      min_dist_);
   cv::Mat normal_image = computeNormalImage(vertex_map, depth_image);
   // Back project to point cloud from range images
   points_C = extractPointCloud(vertex_map, depth_image);
@@ -411,14 +405,16 @@ void NpTsdfServer::processPointCloudMessageAndInsert(
         points_C.size());
   }
 
-  std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+  std::chrono::steady_clock::time_point start =
+      std::chrono::steady_clock::now();
   // non-projective TSDF integration
   integratePointcloud(
       T_G_C_refined, points_C, normals_C, colors, is_freespace_pointcloud);
   std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
   if (verbose_) {
     RCLCPP_INFO(
-        node_->get_logger(), "Finished integrating in %f seconds, have %lu blocks.",
+        node_->get_logger(),
+        "Finished integrating in %f seconds, have %lu blocks.",
         std::chrono::duration<double>(end - start).count(),
         tsdf_map_->getTsdfLayer().getNumberOfAllocatedBlocks());
   }
@@ -486,8 +482,7 @@ bool NpTsdfServer::getNextPointcloudFromQueue(
 
   if (transformer_.lookupTransform(
           sensor_frame_, world_frame_,
-          rclcpp::Time((*pointcloud_msg)->header.stamp, RCL_ROS_TIME),
-          T_G_C)) {
+          rclcpp::Time((*pointcloud_msg)->header.stamp, RCL_ROS_TIME), T_G_C)) {
     queue->pop();
     return true;
   } else {
@@ -536,9 +531,9 @@ void NpTsdfServer::insertPointcloud(
 
   if (timing_)
     RCLCPP_INFO_STREAM(
-        node_->get_logger(),
-        "Frame [" << frame_count_ << "] timings: " << std::endl
-                  << timing::Timing::Print());
+        node_->get_logger(), "Frame [" << frame_count_
+                                       << "] timings: " << std::endl
+                                       << timing::Timing::Print());
   if (verbose_)
     RCLCPP_INFO_STREAM(
         node_->get_logger(),
@@ -580,12 +575,14 @@ void NpTsdfServer::publishAllUpdatedTsdfVoxels() {
   pcl::PointCloud<pcl::PointXYZI> pointcloud_d;
   createDistancePointcloudFromTsdfLayer(
       tsdf_map_->getTsdfLayer(), &pointcloud_d);
-  publishPclCloud(tsdf_pointcloud_pub_, pointcloud_d, world_frame_, node_->now());
+  publishPclCloud(
+      tsdf_pointcloud_pub_, pointcloud_d, world_frame_, node_->now());
   // Create a pointcloud with gradient direction = intensity.
   pcl::PointCloud<pcl::PointXYZI> pointcloud_g;
   createGradientPointcloudFromTsdfLayer(
       tsdf_map_->getTsdfLayer(), &pointcloud_g);
-  publishPclCloud(gsdf_pointcloud_pub_, pointcloud_g, world_frame_, node_->now());
+  publishPclCloud(
+      gsdf_pointcloud_pub_, pointcloud_g, world_frame_, node_->now());
 }
 
 void NpTsdfServer::publishTsdfSurfacePoints() {
@@ -727,8 +724,8 @@ bool NpTsdfServer::generateMesh() {
 
   if (timing_)
     RCLCPP_INFO_STREAM(
-        node_->get_logger(),
-        "Mesh Timings: " << std::endl << timing::Timing::Print());
+        node_->get_logger(), "Mesh Timings: " << std::endl
+                                              << timing::Timing::Print());
   return true;
 }
 
@@ -839,9 +836,7 @@ bool NpTsdfServer::projectPointCloudToImage(
     const Pointcloud& points_C, const Colors& colors,
     cv::Mat& vertex_map,   // corresponding point // NOLINT
     cv::Mat& depth_image,  // Float depth image (CV_32FC1). // NOLINT
-    cv::Mat& color_image,
-    float min_z,
-    float min_d) const {
+    cv::Mat& color_image, float min_z, float min_d) const {
   // TODO(py): consider to calculate in parallel to speed up
   for (size_t i = 0; i < points_C.size(); i++) {
     int u, v;

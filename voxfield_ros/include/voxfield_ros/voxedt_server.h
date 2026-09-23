@@ -3,7 +3,6 @@
 
 #include <memory>
 #include <string>
-
 #include <voxfield/core/esdf_map.h>
 #include <voxfield/core/occupancy_map.h>
 #include <voxfield/integrator/esdf_occ_edt_integrator.h>
@@ -119,12 +118,10 @@ class VoxedtServer : public TsdfServer {
   /// Publish markers for visualization.
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       esdf_pointcloud_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-      esdf_slice_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr esdf_slice_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       esdf_error_slice_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-      traversable_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr traversable_pub_;
 
   /// Publish the complete map for other nodes to consume.
   rclcpp::Publisher<voxfield_msgs::msg::Layer>::SharedPtr esdf_map_pub_;

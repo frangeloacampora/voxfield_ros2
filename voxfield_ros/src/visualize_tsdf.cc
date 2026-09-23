@@ -1,5 +1,3 @@
-#include <string>
-
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <pcl/conversions.h>
@@ -9,7 +7,7 @@
 #include <pcl_msgs/msg/polygon_mesh.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-
+#include <string>
 #include <voxfield/core/tsdf_map.h>
 #include <voxfield/io/layer_io.h>
 #include <voxfield/io/mesh_ply.h>
@@ -32,8 +30,7 @@ class SimpleTsdfVisualizer {
         tsdf_voxel_ply_output_path_("") {
     RCLCPP_DEBUG(node_->get_logger(), "\tSetting up ROS publishers...");
 
-    const rclcpp::QoS kLatchedQos =
-        rclcpp::QoS(1).transient_local().reliable();
+    const rclcpp::QoS kLatchedQos = rclcpp::QoS(1).transient_local().reliable();
     surface_pointcloud_pub_ =
         node_->create_publisher<sensor_msgs::msg::PointCloud2>(
             "~/tsdf_voxels_near_surface", kLatchedQos);
@@ -58,8 +55,7 @@ class SimpleTsdfVisualizer {
         *node_, "tsdf_surface_distance_threshold_factor",
         tsdf_surface_distance_threshold_factor_);
     param(*node_, "tsdf_world_frame", tsdf_world_frame_);
-    param(
-        *node_, "tsdf_voxel_ply_output_path", tsdf_voxel_ply_output_path_);
+    param(*node_, "tsdf_voxel_ply_output_path", tsdf_voxel_ply_output_path_);
     param(*node_, "tsdf_mesh_output_path", tsdf_mesh_output_path_);
 
     std::string color_mode = "color";
@@ -115,12 +111,12 @@ void SimpleTsdfVisualizer::run(const Layer<TsdfVoxel>& tsdf_layer) {
   RCLCPP_INFO_STREAM(
       node_->get_logger(),
       "\nTSDF Layer info:\n"
-      << "\tVoxel size:\t\t " << tsdf_layer.voxel_size() << "\n"
-      << "\t# Voxels per side:\t " << tsdf_layer.voxels_per_side() << "\n"
-      << "\tMemory size:\t\t " << tsdf_layer.getMemorySize() / 1024 / 1024
-      << "MB\n"
-      << "\t# Allocated blocks:\t " << tsdf_layer.getNumberOfAllocatedBlocks()
-      << "\n");
+          << "\tVoxel size:\t\t " << tsdf_layer.voxel_size() << "\n"
+          << "\t# Voxels per side:\t " << tsdf_layer.voxels_per_side() << "\n"
+          << "\tMemory size:\t\t " << tsdf_layer.getMemorySize() / 1024 / 1024
+          << "MB\n"
+          << "\t# Allocated blocks:\t "
+          << tsdf_layer.getNumberOfAllocatedBlocks() << "\n");
 
   RCLCPP_DEBUG(node_->get_logger(), "\tVisualize voxels near surface...");
   {
@@ -207,7 +203,7 @@ int main(int argc, char** argv) {
     RCLCPP_FATAL_STREAM(
         node->get_logger(),
         "Please provide a TSDF proto file to visualize using the ros "
-        << "parameter: tsdf_proto_path");
+            << "parameter: tsdf_proto_path");
     rclcpp::shutdown();
     return 1;
   }

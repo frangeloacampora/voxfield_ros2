@@ -23,15 +23,14 @@
 #ifndef VOXFIELD_MESH_MESH_INTEGRATOR_H_
 #define VOXFIELD_MESH_MESH_INTEGRATOR_H_
 
+#include <Eigen/Core>
 #include <algorithm>
+#include <glog/logging.h>
 #include <list>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
-
-#include <Eigen/Core>
-#include <glog/logging.h>
 
 #include "voxfield/core/layer.h"
 #include "voxfield/core/voxel.h"

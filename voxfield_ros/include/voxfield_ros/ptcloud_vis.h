@@ -2,13 +2,11 @@
 #define VOXFIELD_ROS_PTCLOUD_VIS_H_
 
 #include <algorithm>
-#include <string>
-
 #include <pcl/point_types.h>
 #include <std_msgs/msg/color_rgba.hpp>
+#include <string>
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
-
 #include <voxfield/core/common.h>
 #include <voxfield/core/layer.h>
 #include <voxfield/core/voxel.h>

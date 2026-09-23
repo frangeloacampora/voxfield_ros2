@@ -19,31 +19,27 @@ This repository also provides the implementation of other state-of-the-art metho
 
 ![Pipeline](./docs/assets/comparison.png)
 
-Voxfield can be seamlessly integrated into those projects that originally use Voxblox as their volumetric mapping backbone (Cblox, Voxgraph, Kimera, etc). To make Voxfield directly compatible to those projects, we keep the name of our package as voxblox. In addition, we provide an example on a multi-resolution panoptic mapping framework [**Panmap**](https://github.com/VIS4ROB-lab/voxfield-panmap) for high-fidelity large-scale semantic reconstruction. 
+Voxfield can be seamlessly integrated into those projects that originally use Voxblox as their volumetric mapping backbone (Cblox, Voxgraph, Kimera, etc). In addition, we provide an example on a multi-resolution panoptic mapping framework [**Panmap**](https://github.com/VIS4ROB-lab/voxfield-panmap) for high-fidelity large-scale semantic reconstruction.
 
+**This is a ROS 2 (Jazzy) port.** The packages, C++ namespace, include paths, protobuf package, message package, and RViz plugin are all renamed from `voxblox*` to `voxfield*` (see `docs/ROS2_PORT_NOTES.md` for the full rename log). This means Voxfield no longer masquerades as Voxblox: it can be installed and used *alongside* an unrelated `voxblox` ROS 2 install in the same workspace without symbol, protobuf, message, or RViz-plugin clashes. The trade-off is that projects built against upstream Voxblox (Cblox, Voxgraph, Kimera, Panmap) need their includes (`voxblox/...` → `voxfield/...`), namespace (`voxblox::` → `voxfield::`), and message package (`voxblox_msgs` → `voxfield_msgs`) updated to depend on Voxfield instead. Mapping algorithms, default parameter values, and all ROS topic/service/parameter names are otherwise unchanged from the original ROS 1 Voxfield, and the protobuf message format is wire-compatible, so `.tsdf`/`.esdf`/`.vxblx` map files saved by ROS 1 Voxfield or Voxblox still load here.
+
+ROS 1 support lives on in this repository's git history (tag/branch predating the ROS 2 port); this branch is ROS 2-only going forward.
 
 ## Installation
 
-If you have installed ROS, set up the catkin workspace and the SSH key for github, you can use the following commands to install Voxfield:
+Prerequisites: Ubuntu 24.04 with ROS 2 Jazzy installed (`/opt/ros/jazzy`).
 
 ```
-cd ~/catkin_ws/src/
-git clone git@github.com:VIS4ROB-lab/voxfield.git
-wstool init . ./voxfield/voxfield_ssh.rosinstall     # If you created a new workspace
-wstool merge -t . ./voxfield/voxfield_ssh.rosinstall # If you use an existing workspace
-wstool update
+mkdir -p ~/voxfield_ws/src
+cd ~/voxfield_ws/src
+git clone <this-repo-url> voxfield_ros2
+cd ~/voxfield_ws
+rosdep install --from-paths src -y --ignore-src
+colcon build
+source install/setup.bash
 ```
 
-And then compile Voxfield with:
-
-```
-cd ~/catkin_ws/src/
-catkin build voxfield_ros
-```
-
-To avoid the potential conflict, if the original voxblox was installed, it's better to remove voxblox from `catkin_ws/src`.
-
-For more details, please follow these [instructions](https://voxblox.readthedocs.io/en/latest/pages/Installation.html).
+If a separate `voxblox` ROS 2 install is also sourced in your shell (e.g. from an unrelated project), Voxfield builds and runs alongside it without conflict — see `docs/ROS2_PORT_NOTES.md` §2.1 for how that's verified.
 
 ## Instructions
 
@@ -55,6 +51,12 @@ For more details, please follow these [instructions](https://voxblox.readthedocs
 
 ## Example Usage
 
+The datasets below were recorded as ROS 1 bags. Convert one to a ROS 2 bag first with [`rosbags`](https://gitlab.com/ternaris/rosbags) (`pip install --user rosbags`):
+
+```
+rosbags-convert --src <dataset>.bag --dst <dataset>_ros2
+```
+
 ### Run on the Cow & Lady real-world RGB-D dataset
 
 1. Download the dataset [here](https://projects.asl.ethz.ch/datasets/doku.php?id=iros2017) or use the following command in a target folder:
@@ -64,22 +66,20 @@ wget http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/data.bag
 wget http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/voxblox_cow_extras.zip
 ```
 
-2. Set the `bag_file` path in the launch files `./voxfield_ros/launch/voxfield_launch/cow_voxfield.launch` to the path storing the Cow & Lady bag file.
-3. Run Voxfield mapping on the Cow & Lady dataset:
+2. Convert the bag as above, then run Voxfield mapping on the Cow & Lady dataset:
 
 ```
-roslaunch voxfield_ros cow_voxfield.launch
+ros2 launch voxfield_ros cow_voxfield.launch.py bag_file:=<path/to/data_ros2>
 ```
 
 ### Run on the KITTI real-world LiDAR or stereo dataset
 
 1. Download the full dataset [here](http://www.cvlibs.net/datasets/kitti/eval_odometry.php) or a rosbag of sequence07 [here](https://drive.google.com/file/d/1_qUfwUw88rEKitUpt1kjswv7Cv4GPs0b/view).
    Then use the [kitti_to_rosbag](https://github.com/ethz-asl/kitti_to_rosbag) package to convert the full dataset to rosbags.
-2. Set the `bag_file` path in the launch files `./voxfield_ros/launch/voxfield_launch/kitti_voxfield.launch` to the path storing the KITTI bag file.
-3. Run Voxfield mapping on the KITTI dataset:
+2. Convert the bag as above, then run Voxfield mapping on the KITTI dataset:
 
 ```
-roslaunch voxfield_ros kitti_voxfield.launch
+ros2 launch voxfield_ros kitti_voxfield.launch.py bag_file:=<path/to/kitti_ros2>
 ```
 
 ### Run on the MaiCity synthetic LiDAR dataset
@@ -91,20 +91,31 @@ wget https://www.ipb.uni-bonn.de/html/projects/mai_city/mai_city.tar.gz
 tar -xvf mai_city.tar.gz
 ```
 
-2. Set the `bag_file` path in the launch files `./voxfield_ros/launch/voxfield_launch/mai_voxfield.launch` to the path storing the MaiCity bag file.
-3. Run Voxfield mapping on the MaiCity dataset:
+2. Convert the bag as above, then run Voxfield mapping on the MaiCity dataset:
 
 ```
-roslaunch voxfield_ros mai_voxfield.launch
+ros2 launch voxfield_ros mai_voxfield.launch.py bag_file:=<path/to/mai_city_ros2>
 ```
 
-### Run on your own data (TBA)
+### Run on your own data
+
+Use the generic launch file directly, picking whichever dataset preset (`cow`/`kitti`/`mai`/`basement`/`vicon`) is closest to your sensor setup for its default topics/robot model/RViz config, then override what differs:
+
+```
+ros2 launch voxfield_ros mapping.launch.py \
+    method:=voxfield dataset:=kitti \
+    bag_file:=<path/to/your_bag_ros2> \
+    pointcloud_topic:=<your/pointcloud/topic> \
+    transform_topic:=<your/transform/topic>   # only if you're not using TF
+```
+
+`ros2 launch voxfield_ros mapping.launch.py --show-args` lists every override (`speed`, `rviz`, `rviz_config`, `robot_model_file`, `use_sim_time`, ...).
 
 ### Customizing, comparison and evaluation
 
-To change the mapping and visualization parameters such as voxel size and truncation distance, please configure the `.yaml` files under `./voxfield_ros/cfg/param/` folder.
+To change the mapping and visualization parameters such as voxel size and truncation distance, please configure the `.yaml` files under `./voxfield_ros/cfg/param/` folder (ROS 2 parameter-file format — see `scripts/convert_ros1_params.py` if you're porting parameters from a ROS 1 Voxblox/Voxfield setup).
 
-For the comparison with other state-of-the-art methods (Voxblox, FIESTA, EDT), set the `bag_file` path in the corresponding launch file `[dataset]_[method].launch` and launch it.
+For the comparison with other state-of-the-art methods (Voxblox, FIESTA, EDT), set `bag_file` on the corresponding launch file `[dataset]_[method].launch.py` and launch it.
 
 To evaluate the TSDF, mesh and ESDF mapping quality, one first need to use the ros service to save the corresponding map. You can configure the data path and evaluation setup [here](https://github.com/VIS4ROB-lab/voxfield-panmap/blob/master/panoptic_mapping_utils/config/evaluate_config.yaml) and conduct the evaluation by launching [here](https://github.com/VIS4ROB-lab/voxfield-panmap/blob/master/panoptic_mapping_utils/launch/evaluate_panmap.launch). You may also check the evaluation metrics [here](https://github.com/VIS4ROB-lab/voxfield-panmap/blob/master/panoptic_mapping_utils/src/evaluation/map_evaluator.cpp).
 

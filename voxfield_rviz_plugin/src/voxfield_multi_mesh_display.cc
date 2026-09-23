@@ -2,7 +2,6 @@
 
 #include <OgreSceneManager.h>
 #include <OgreSceneNode.h>
-
 #include <rviz_common/display_context.hpp>
 #include <rviz_common/frame_manager_iface.hpp>
 #include <rviz_common/logging.hpp>
@@ -75,9 +74,11 @@ void VoxfieldMultiMeshDisplay::processMessage(
     // create a visual if it does not yet exist.
     if (it == visuals_.end()) {
       it = visuals_
-               .insert(std::make_pair(
-                   msg->name_space,
-                   VoxfieldMeshVisual(context_->getSceneManager(), scene_node_)))
+               .insert(
+                   std::make_pair(
+                       msg->name_space,
+                       VoxfieldMeshVisual(
+                           context_->getSceneManager(), scene_node_)))
                .first;
       visibility_fields_->addField(msg->name_space);
       it->second.setEnabled(visibility_fields_->isEnabled(msg->name_space));
@@ -110,10 +111,9 @@ bool VoxfieldMultiMeshDisplay::updateTransformation(
   if (!context_->getFrameManager()->getTransform(
           visual->getFrameId(), stamp, position, orientation)) {
     RVIZ_COMMON_LOG_DEBUG_STREAM(
-        "Error transforming from frame '" << visual->getFrameId()
-                                           << "' to frame '"
-                                           << fixed_frame_.toStdString()
-                                           << "'");
+        "Error transforming from frame '"
+        << visual->getFrameId() << "' to frame '" << fixed_frame_.toStdString()
+        << "'");
     return false;
   }
   visual->setPose(position, orientation);
@@ -185,10 +185,11 @@ void VisibilityField::addField(const std::string& field_name) {
     }
     it->second->addField(sub_name);
   } else {
-    auto it = children_
-                  .insert(std::make_pair(
-                      field_name, std::unique_ptr<VisibilityField>()))
-                  .first;
+    auto it =
+        children_
+            .insert(
+                std::make_pair(field_name, std::unique_ptr<VisibilityField>()))
+            .first;
     it->second.reset(new VisibilityField(field_name, this, master_));
   }
 }

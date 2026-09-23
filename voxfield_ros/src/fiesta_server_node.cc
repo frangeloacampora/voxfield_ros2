@@ -1,5 +1,4 @@
 #include "voxfield_ros/fiesta_server.h"
-
 #include "voxfield_ros/node_main.h"
 
 int main(int argc, char** argv) {

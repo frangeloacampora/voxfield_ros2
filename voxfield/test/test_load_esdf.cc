@@ -1,7 +1,6 @@
+#include <glog/logging.h>
 #include <memory>
 #include <string>
-
-#include <glog/logging.h>
 
 #include "voxfield/core/block.h"
 #include "voxfield/core/layer.h"

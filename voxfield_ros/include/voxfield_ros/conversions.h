@@ -3,15 +3,13 @@
 
 #include <algorithm>
 #include <memory>
-#include <string>
-#include <vector>
-
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/color_rgba.hpp>
-
+#include <string>
+#include <vector>
 #include <voxfield/core/common.h>
 #include <voxfield/core/layer.h>
 #include <voxfield/mesh/mesh.h>

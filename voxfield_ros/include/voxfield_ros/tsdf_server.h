@@ -1,21 +1,19 @@
 #ifndef VOXFIELD_ROS_TSDF_SERVER_H_
 #define VOXFIELD_ROS_TSDF_SERVER_H_
 
-#include <memory>
-#include <queue>
-#include <string>
-
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <memory>
 #include <pcl/conversions.h>
 #include <pcl/filters/filter.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <queue>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_srvs/srv/empty.hpp>
+#include <string>
 #include <tf2_ros/transform_broadcaster.h>
 #include <visualization_msgs/msg/marker_array.hpp>
-
 #include <voxfield/alignment/icp.h>
 #include <voxfield/core/tsdf_map.h>
 #include <voxfield/integrator/tsdf_integrator.h>
@@ -48,8 +46,7 @@ class TsdfServer {
 
   void getServerConfigFromRosParam();
 
-  void insertPointcloud(
-      sensor_msgs::msg::PointCloud2::SharedPtr pointcloud);
+  void insertPointcloud(sensor_msgs::msg::PointCloud2::SharedPtr pointcloud);
 
   void insertFreespacePointcloud(
       sensor_msgs::msg::PointCloud2::SharedPtr pointcloud);
@@ -165,8 +162,7 @@ class TsdfServer {
       tsdf_pointcloud_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       surface_pointcloud_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-      tsdf_slice_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr tsdf_slice_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
       occupancy_marker_pub_;
   rclcpp::Publisher<geometry_msgs::msg::TransformStamped>::SharedPtr

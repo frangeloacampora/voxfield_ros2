@@ -1,7 +1,6 @@
+#include <gtest/gtest.h>
 #include <limits>
 #include <random>
-
-#include <gtest/gtest.h>
 
 #include "voxfield/core/block_hash.h"
 #include "voxfield/core/common.h"

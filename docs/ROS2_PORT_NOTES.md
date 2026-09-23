@@ -885,3 +885,137 @@ subscribed to its (renamed) topic.
 
 **Accept (plan §6 Phase 10):** met, modulo the dataset-playback caveat
 above (Phase 12).
+
+## Phase 11: Docs, cleanup, CI
+
+- **README.md:** rewrote the Installation section for `colcon`/`rosdep`
+  (dropped `wstool`/`catkin build`), replaced the "we keep the name of our
+  package as voxblox" paragraph with an explanation of the D1 rename and
+  what it means for downstream projects (Cblox/Voxgraph/Kimera/Panmap need
+  their includes/namespace/message package updated to `voxfield*`), and
+  updated every `roslaunch pkg file.launch` example to `ros2 launch pkg
+  file.launch.py`, adding the `rosbags-convert` bag-conversion step ahead
+  of each one. Added a "Run on your own data" section using
+  `mapping.launch.py` directly, replacing the ROS 1 original's "(TBA)"
+  placeholder. Left the citation, acknowledgments, paper/video links, and
+  external voxblox.readthedocs.io links untouched, per plan §0.5/§6 Phase
+  11.
+- **Removed** `voxfield_https.rosinstall`, `voxfield_ssh.rosinstall`,
+  `rosdoc.yaml` (all catkin/rosdoc tooling, meaningless under `colcon`).
+- **`.gitignore`:** dropped catkin-only entries (`devel/`, `msg_gen/`,
+  `srv_gen/`, `build_isolated/`, `devel_isolated/`, `CATKIN_IGNORE`,
+  dynamic-reconfigure `*.cfgc`, generated `srv/_*.py`/`msg/_*.py`, a
+  `/planning/` block that doesn't exist in this repo); kept
+  editor/generated-doc entries and `build/`/`install`/`log/` (already
+  present, matches D2/§5's colcon layout) and added `COLCON_IGNORE` (used
+  on `voxfield_rviz_plugin/COLCON_IGNORE` during Phases 3-7 before that
+  package existed; kept for any future per-package opt-out).
+- **CI:** added `.github/workflows/ros2.yml` using `ros-tooling/setup-ros`
+  + `ros-tooling/action-ros-ci` on `ubuntu-24.04` with
+  `required-ros-distributions: jazzy`, building and testing all 4
+  packages (`voxfield`, `voxfield_msgs`, `voxfield_ros`,
+  `voxfield_rviz_plugin`). Not yet run on real CI infrastructure (this
+  environment has no GitHub Actions access) -- the workflow mirrors the
+  exact `colcon build`/`colcon test` invocations already verified
+  manually in every phase's acceptance check, so it should pass, but
+  that's unverified until it actually runs.
+- **clang-format:** ran `clang-format` (repo's own `.clang-format`:
+  Google style, 80 cols, pointer-left) over exactly the 145 C++ files
+  this port touched (`git diff main...HEAD --name-only --diff-filter=AMR
+  -- '*.cc' '*.h'`, confirming the vendored `voxfield/third_party/minkindr`
+  headers -- untouched by the port -- were correctly excluded).
+  `clang-format` wasn't installed and this sandbox has no interactive
+  `sudo` password prompt; installed a user-level copy with `pip install
+  --user clang-format` instead of skipping the step (confirmed with the
+  user first). Result: 86 files reformatted, 523 insertions / 594
+  deletions, entirely whitespace/line-break/include-ordering -- confirmed
+  behavior-neutral by a full clean rebuild (0 errors) and `colcon
+  test-result`: 65/65 tests still passing after the reformat.
+
+### Final interface table (plan §3.4, re-verified)
+
+Re-checked live against a running `voxfield_server` (the most complete
+interface: TsdfServer/NpTsdfServer's ESDF-capable servers get the full
+set below; `tsdf_server`/`np_tsdf_server`/`intensity_server` lack the
+`~/esdf_*` and `~/save_esdf_map` entries, since they have no ESDF
+integrator) via `ros2 node info /voxfield_node`, launched through
+`mapping.launch.py method:=voxfield dataset:=kitti` (Phase 10). Matches
+plan §3.4 exactly; node-name prefix is `/voxfield_node` per D1 (was
+`/voxblox_node`).
+
+- **Subscriptions (remappable):** `pointcloud`, `freespace_pointcloud`
+  (if `use_freespace_pointcloud`), `transform` (if `!use_tf_transforms`).
+- **Subscriptions (private):** `~/tsdf_map_in`, `~/esdf_map_in`,
+  `~/intensity_image` (`IntensityServer` only).
+- **Publishers (private):** `~/mesh` (latched), `~/surface_pointcloud`,
+  `~/tsdf_pointcloud`, `~/gsdf_pointcloud`, `~/tsdf_slice`, `~/gsdf_slice`,
+  `~/occupied_nodes`, `~/tsdf_map_out`, `~/esdf_map_out`, `~/Robot_model`,
+  `~/icp_transform` (via `/tf`), `~/esdf_pointcloud`, `~/esdf_slice`,
+  `~/traversable`, `~/esdf_error_slice`, `~/intensity_pointcloud`,
+  `~/intensity_mesh`.
+- **Services (private):** `~/generate_mesh`, `~/clear_map`, `~/save_map`,
+  `~/load_map`, `~/save_esdf_map`, `~/save_occ_map`, `~/save_all_map`,
+  `~/publish_pointclouds`, `~/publish_map`.
+- **TF:** looks up `world_frame ← sensor_frame`; broadcasts
+  `icp_corrected`/`pose_corrected` on `/tf` when ICP is enabled.
+
+### Known upstream issues (consolidated)
+
+Everything below is pre-existing ROS 1 Voxfield/Voxblox behavior, carried
+over unfixed per the plan's "document, don't silently fix" rule (§0 item
+6). Algorithmic ones are already named in plan §8.14; the rest were found
+during the port and logged in their own phase's section above (linked
+here for a single point of reference):
+
+1. `NpTsdfServer::computeNormalImage()`: `if (v == height_)` can never be
+   true inside `for (v = 0; v < height_; ...)`, so row `height_ - 1`'s
+   normals read one row out of bounds of `vertex_map`/`depth_image`. Very
+   likely meant `v == height_ - 1`. (Plan §8.14; Phase 6 notes above.)
+2. `NpTsdfServer::projectPointToImageCamera()` returns `bool` but its
+   result is assigned to a `float depth`, so `depth` for camera (non-
+   LIDAR) sensors is always `0.0` or `1.0` -- the `depth > min_d` filter
+   passes every in-image point, and "keep nearest point per pixel"
+   instead keeps the *first* point. Affects RGB-D datasets (Cow & Lady,
+   Vicon) through `voxfield_server`/`np_tsdf_server` specifically (LIDAR
+   datasets take a different code path). (Plan §8.14; not yet exercised
+   against real RGB-D data in this port -- flagged again under Phase 12.)
+3. Camera intrinsics `fx_`/`fy_`/`vx_`/`vy_` are `int`, truncating
+   non-integer calibrations. (Plan §8.14.)
+4. `width_`/`height_`/`vx_`/`fx_` were read via
+   `nh_private.param("x", member_, member_)` with no prior initializer --
+   an indeterminate-value (UB) read if the ROS param is absent. Now
+   initialized to `0` with an `RCLCPP_ERROR` if `width_ <= 0 ||
+   height_ <= 0` after param loading; the missing-param *behavior*
+   (garbage range-image preprocessing) is unchanged, only the UB and the
+   silent failure mode are gone. (Phase 6 notes above.)
+5. `timing_` (`TsdfServer`, `NpTsdfServer`) and `publish_robot_model_`
+   (`TsdfServer`) have the same "read own value as own default with no
+   prior initializer" UB as #4, just not called out in the plan. Same
+   fix applied (explicit `= false` in-class initializer); observed
+   effective default (`false`) unchanged. (Phase 6 notes above.)
+6. `VoxfieldServer::generateEsdfCallback()` /
+   `VoxbloxServer::generateEsdfCallback()` are declared (and, for
+   `VoxbloxServer`, defined) with a `generate_esdf_srv_` member, but
+   neither is ever bound to an actual ROS service in `setupRos()` --
+   dead/unreachable via ROS in both the ROS 1 original and here. (Phase
+   7 notes above.)
+7. `cfg/calib/euroc_calib.yaml` has a `T_B_D::` (double colon) typo,
+   parsed by both ROS 1's `rosparam` and PyYAML as a literal key
+   `"T_B_D:"`, so `T_B_D` was never actually readable under that name in
+   ROS 1 either. Not used by any in-scope (non-`bak/`) launch file.
+   (Phase 9 notes above.)
+8. `launch/eval/eval_cow.launch` and `eval_euroc.launch` each loaded a
+   `cfg/{cow,euroc}_dataset.yaml` that has never existed in this
+   repository -- already non-functional in ROS 1. The dead reference is
+   dropped (rather than ported byte-for-byte) in the `.launch.py`
+   equivalents, since in ROS 2 it would abort the whole launch rather
+   than just failing to set a few params. (Phase 9/10 notes above.)
+9. `launch/voxfield_launch/basement_voxfield.launch` and
+   `launch/voxblox_launch/basement_voxblox.launch` never set
+   `use_sim_time` at all (every other dataset's launch file does) --
+   `mapping.launch.py`'s `basement_*.launch.py` wrappers default it to
+   `true` regardless, since ROS 2 requires it on every node. (Phase 10
+   notes above.)
+10. `process_every_nth_frame` was declared as a launch argument in nearly
+    every ROS 1 `.launch` file but never read by any node -- a dead
+    argument, dropped rather than ported. (Phase 10 notes above.)

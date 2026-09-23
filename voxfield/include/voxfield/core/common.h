@@ -1,7 +1,10 @@
 #ifndef VOXFIELD_CORE_COMMON_H_
 #define VOXFIELD_CORE_COMMON_H_
 
+#include <Eigen/Core>
 #include <deque>
+#include <glog/logging.h>
+#include <kindr/minimal/quat-transformation.h>
 #include <list>
 #include <memory>
 #include <queue>
@@ -11,10 +14,6 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
-
-#include <Eigen/Core>
-#include <glog/logging.h>
-#include <kindr/minimal/quat-transformation.h>
 
 namespace voxfield {
 

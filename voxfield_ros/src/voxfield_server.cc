@@ -67,8 +67,7 @@ void VoxfieldServer::setupRos() {
   // Set up subscriber.
   esdf_map_sub_ = node_->create_subscription<voxfield_msgs::msg::Layer>(
       "~/esdf_map_in", rclcpp::QoS(1),
-      std::bind(
-          &VoxfieldServer::esdfMapCallback, this, std::placeholders::_1));
+      std::bind(&VoxfieldServer::esdfMapCallback, this, std::placeholders::_1));
 
   // Whether to clear each new pose as it comes in, and then set a sphere
   // around it to occupied.
@@ -83,10 +82,9 @@ void VoxfieldServer::setupRos() {
   param(*node_, "update_esdf_every_n_sec", update_esdf_every_n_sec);  // NOLINT
 
   save_esdf_map_srv_ = node_->create_service<voxfield_msgs::srv::FilePath>(
-      "~/save_esdf_map",
-      std::bind(
-          &VoxfieldServer::saveEsdfMapCallback, this, std::placeholders::_1,
-          std::placeholders::_2));
+      "~/save_esdf_map", std::bind(
+                             &VoxfieldServer::saveEsdfMapCallback, this,
+                             std::placeholders::_1, std::placeholders::_2));
 
   if (update_esdf_every_n_sec > 0.0) {
     update_esdf_timer_ = rclcpp::create_timer(
@@ -437,7 +435,8 @@ void VoxfieldServer::visualizeEsdfError() {
   createErrorPointcloudFromEsdfLayerSlice(
       esdf_map_->getEsdfLayer(), kZAxisIndex, slice_level_, &pointcloud);
 
-  publishPclCloud(esdf_error_slice_pub_, pointcloud, world_frame_, node_->now());
+  publishPclCloud(
+      esdf_error_slice_pub_, pointcloud, world_frame_, node_->now());
 }
 
 }  // namespace voxfield

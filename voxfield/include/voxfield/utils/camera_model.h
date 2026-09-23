@@ -1,11 +1,10 @@
 #ifndef VOXFIELD_UTILS_CAMERA_MODEL_H_
 #define VOXFIELD_UTILS_CAMERA_MODEL_H_
 
-#include <vector>
-
 #include <Eigen/Core>
 #include <glog/logging.h>
 #include <kindr/minimal/quat-transformation.h>
+#include <vector>
 
 #include "voxfield/core/common.h"
 

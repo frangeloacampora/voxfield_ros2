@@ -1,10 +1,12 @@
 #ifndef VOXFIELD_INTEGRATOR_TSDF_INTEGRATOR_H_
 #define VOXFIELD_INTEGRATOR_TSDF_INTEGRATOR_H_
 
+#include <Eigen/Core>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <deque>
+#include <glog/logging.h>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -13,9 +15,6 @@
 #include <thread>
 #include <utility>
 #include <vector>
-
-#include <Eigen/Core>
-#include <glog/logging.h>
 
 #include "voxfield/core/block_hash.h"
 #include "voxfield/core/common.h"

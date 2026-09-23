@@ -26,12 +26,10 @@
 
 #include <algorithm>
 #include <limits>
-#include <string>
-
 #include <rclcpp/rclcpp.hpp>
+#include <string>
 #include <tf2_eigen/tf2_eigen.hpp>
 #include <visualization_msgs/msg/marker.hpp>
-
 #include <voxfield/core/common.h>
 #include <voxfield/integrator/esdf_integrator.h>
 #include <voxfield/integrator/tsdf_integrator.h>
@@ -78,7 +76,8 @@ inline Point lambertShading(
 }
 
 inline void lambertColorFromColorAndNormal(
-    const Color& color, const Point& normal, std_msgs::msg::ColorRGBA* color_msg) {
+    const Color& color, const Point& normal,
+    std_msgs::msg::ColorRGBA* color_msg) {
   // These are just some arbitrary light directions, I believe taken from
   // OpenChisel.
   const Point light_dir = Point(0.8f, -0.2f, 0.7f).normalized();

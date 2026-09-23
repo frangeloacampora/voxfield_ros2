@@ -9,11 +9,11 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#define UNITTEST_ENTRYPOINT                \
-  int main(int argc, char** argv) {        \
+#define UNITTEST_ENTRYPOINT                 \
+  int main(int argc, char** argv) {         \
     ::testing::InitGoogleTest(&argc, argv); \
-    google::InitGoogleLogging(argv[0]);    \
-    return RUN_ALL_TESTS();                \
+    google::InitGoogleLogging(argv[0]);     \
+    return RUN_ALL_TESTS();                 \
   }
 
 #endif  // EIGEN_CHECKS_ENTRYPOINT_H_

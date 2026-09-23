@@ -1,5 +1,4 @@
 #include <cmath>
-
 #include <gtest/gtest.h>
 
 #include "voxfield_ros/kindr_conversions.h"
@@ -59,8 +58,8 @@ TEST(KindrConversions, NonNormalizedQuaternionIsRenormalized) {
   transformMsgToKindr(msg, &transform);
 
   const auto& q = transform.getRotation();
-  const double norm_sq = q.w() * q.w() + q.x() * q.x() + q.y() * q.y() +
-                          q.z() * q.z();
+  const double norm_sq =
+      q.w() * q.w() + q.x() * q.x() + q.y() * q.y() + q.z() * q.z();
   EXPECT_NEAR(norm_sq, 1.0, 1e-9);
   EXPECT_NEAR(q.w(), 1.0, 1e-9);
 }

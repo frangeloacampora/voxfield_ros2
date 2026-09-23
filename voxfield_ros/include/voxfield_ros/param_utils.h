@@ -12,11 +12,10 @@
 // falling back to the caller's default on a real type error.
 
 #include <cmath>
+#include <rclcpp/rclcpp.hpp>
 #include <string>
 #include <type_traits>
 #include <vector>
-
-#include <rclcpp/rclcpp.hpp>
 
 #include "voxfield/core/common.h"
 
@@ -38,7 +37,8 @@ inline rclcpp::ParameterValue declareAndGet(
 }  // namespace param_utils_internal
 
 template <typename T>
-T getParam(rclcpp::Node& node, const std::string& name, const T& default_value) {
+T getParam(
+    rclcpp::Node& node, const std::string& name, const T& default_value) {
   using param_utils_internal::declareAndGet;
 
   if constexpr (std::is_same_v<T, bool>) {
@@ -72,8 +72,8 @@ T getParam(rclcpp::Node& node, const std::string& name, const T& default_value) 
         return default_value;
     }
   } else if constexpr (std::is_same_v<T, std::vector<double>>) {
-    rclcpp::ParameterValue value = declareAndGet(
-        node, name, rclcpp::ParameterValue(default_value));
+    rclcpp::ParameterValue value =
+        declareAndGet(node, name, rclcpp::ParameterValue(default_value));
     switch (value.get_type()) {
       case rclcpp::ParameterType::PARAMETER_NOT_SET:
         return default_value;
@@ -155,8 +155,8 @@ void param(rclcpp::Node& node, const std::string& name, T& value) {
 // optional "invert_<name>" bool. Returns false (and leaves T unchanged) if
 // absent.
 inline bool getTransformationParam(
-    rclcpp::Node& node, const std::string& name,
-    const std::string& invert_name, Transformation* T_out) {
+    rclcpp::Node& node, const std::string& name, const std::string& invert_name,
+    Transformation* T_out) {
   const auto& overrides =
       node.get_node_parameters_interface()->get_parameter_overrides();
   const bool present = node.has_parameter(name) || overrides.count(name) > 0;

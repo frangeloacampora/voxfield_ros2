@@ -1,12 +1,11 @@
 #ifndef VOXFIELD_INTEGRATOR_OCCUPANCY_TSDF_INTEGRATOR_H_
 #define VOXFIELD_INTEGRATOR_OCCUPANCY_TSDF_INTEGRATOR_H_
 
+#include <Eigen/Core>
 #include <algorithm>
 #include <cmath>
-#include <vector>
-
-#include <Eigen/Core>
 #include <glog/logging.h>
+#include <vector>
 
 #include "voxfield/core/block_hash.h"
 #include "voxfield/core/layer.h"

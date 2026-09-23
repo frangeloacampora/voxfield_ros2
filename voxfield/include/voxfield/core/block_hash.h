@@ -1,12 +1,11 @@
 #ifndef VOXFIELD_CORE_BLOCK_HASH_H_
 #define VOXFIELD_CORE_BLOCK_HASH_H_
 
+#include <Eigen/Core>
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-
-#include <Eigen/Core>
 
 #include "voxfield/core/common.h"
 

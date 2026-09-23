@@ -1,10 +1,8 @@
 #include "voxfield_rviz_plugin/voxfield_mesh_visual.h"
 
-#include <limits>
-
 #include <OgreSceneManager.h>
 #include <OgreSceneNode.h>
-
+#include <limits>
 #include <voxfield/mesh/mesh_utils.h>
 
 namespace voxfield_rviz_plugin {

@@ -36,8 +36,9 @@ class SdfIntegratorsTest : public ::testing::TestWithParam<FloatingPoint> {
     Point cylinder_center(0.0, 0.0, 2.0);
     FloatingPoint cylinder_radius = 2;
     FloatingPoint cylinder_height = 4;
-    world_.addObject(std::unique_ptr<Object>(new Cylinder(
-        cylinder_center, cylinder_radius, cylinder_height, Color::Red())));
+    world_.addObject(
+        std::unique_ptr<Object>(new Cylinder(
+            cylinder_center, cylinder_radius, cylinder_height, Color::Red())));
     world_.addGroundLevel(0.0);
 
     // Next, generate poses evenly spaced in a circle around the object.

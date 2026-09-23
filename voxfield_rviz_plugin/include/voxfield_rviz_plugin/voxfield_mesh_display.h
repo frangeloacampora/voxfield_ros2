@@ -2,7 +2,6 @@
 #define VOXFIELD_RVIZ_PLUGIN_VOXFIELD_MESH_DISPLAY_H_
 
 #include <memory>
-
 #include <rclcpp/time.hpp>
 #include <rviz_common/message_filter_display.hpp>
 #include <rviz_common/properties/bool_property.hpp>

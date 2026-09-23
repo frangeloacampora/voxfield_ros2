@@ -1,11 +1,9 @@
 #ifndef VOXFIELD_ROS_INTENSITY_SERVER_H_
 #define VOXFIELD_ROS_INTENSITY_SERVER_H_
 
-#include <memory>
-
 #include <cv_bridge/cv_bridge.hpp>
+#include <memory>
 #include <sensor_msgs/msg/image.hpp>
-
 #include <voxfield/core/voxel.h>
 #include <voxfield/integrator/intensity_integrator.h>
 #include <voxfield/utils/color_maps.h>
@@ -25,7 +23,8 @@ class IntensityServer : public TsdfServer {
   virtual void updateMesh();
   virtual void publishPointclouds();
 
-  void intensityImageCallback(const sensor_msgs::msg::Image::ConstSharedPtr image);
+  void intensityImageCallback(
+      const sensor_msgs::msg::Image::ConstSharedPtr image);
 
  protected:
   /// Subscriber for intensity images.

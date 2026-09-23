@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-
 #include <rclcpp/rclcpp.hpp>
 
 #include "voxfield_ros/param_utils.h"
@@ -20,37 +19,33 @@ TEST(ParamUtils, MissingParameterReturnsDefault) {
   EXPECT_DOUBLE_EQ(getParam<double>(*node, "not_set", 4.5), 4.5);
   EXPECT_EQ(getParam<int>(*node, "also_not_set", 7), 7);
   EXPECT_EQ(getParam<bool>(*node, "bool_not_set", true), true);
-  EXPECT_EQ(getParam<std::string>(*node, "str_not_set", "fallback"), "fallback");
+  EXPECT_EQ(
+      getParam<std::string>(*node, "str_not_set", "fallback"), "fallback");
 }
 
 TEST(ParamUtils, IntegerOverrideCoercedToDouble) {
   // A YAML file with "tsdf_voxel_size: 0" parses as an integer; the target
   // C++ type is double/float. D6 requires this to coerce, not throw.
-  auto node = makeNode(
-      "test_int_to_double",
-      {rclcpp::Parameter("voxel_size", 2)});
+  auto node =
+      makeNode("test_int_to_double", {rclcpp::Parameter("voxel_size", 2)});
   EXPECT_DOUBLE_EQ(getParam<double>(*node, "voxel_size", 0.25), 2.0);
   EXPECT_FLOAT_EQ(getParam<float>(*node, "voxel_size", 0.25f), 2.0f);
 }
 
 TEST(ParamUtils, DoubleOverrideCoercedToIntWhenIntegral) {
-  auto node = makeNode(
-      "test_double_to_int_ok",
-      {rclcpp::Parameter("count", 3.0)});
+  auto node =
+      makeNode("test_double_to_int_ok", {rclcpp::Parameter("count", 3.0)});
   EXPECT_EQ(getParam<int>(*node, "count", 1), 3);
 }
 
 TEST(ParamUtils, NonIntegralDoubleOverrideFallsBackToDefaultForIntTarget) {
-  auto node = makeNode(
-      "test_double_to_int_bad",
-      {rclcpp::Parameter("count", 3.5)});
+  auto node =
+      makeNode("test_double_to_int_bad", {rclcpp::Parameter("count", 3.5)});
   EXPECT_EQ(getParam<int>(*node, "count", 1), 1);
 }
 
 TEST(ParamUtils, RepeatedReadsDoNotThrow) {
-  auto node = makeNode(
-      "test_repeated_reads",
-      {rclcpp::Parameter("value", 42)});
+  auto node = makeNode("test_repeated_reads", {rclcpp::Parameter("value", 42)});
   EXPECT_EQ(getParam<int>(*node, "value", 0), 42);
   // A second read of the same name must not hit
   // ParameterAlreadyDeclaredException.
@@ -59,9 +54,7 @@ TEST(ParamUtils, RepeatedReadsDoNotThrow) {
 }
 
 TEST(ParamUtils, ParamInPlaceHelperMatchesGetParam) {
-  auto node = makeNode(
-      "test_param_in_place",
-      {rclcpp::Parameter("x", 1.5)});
+  auto node = makeNode("test_param_in_place", {rclcpp::Parameter("x", 1.5)});
   double x = 0.0;
   param(*node, "x", x);
   EXPECT_DOUBLE_EQ(x, 1.5);
@@ -78,14 +71,12 @@ TEST(ParamUtils, TransformationParamAbsentReturnsFalse) {
 
 TEST(ParamUtils, TransformationParamRoundTrip) {
   // Row-major 4x4: translation (1, 2, 3), identity rotation.
-  const std::vector<double> flat = {
-      1.0, 0.0, 0.0, 1.0,   //
-      0.0, 1.0, 0.0, 2.0,   //
-      0.0, 0.0, 1.0, 3.0,   //
-      0.0, 0.0, 0.0, 1.0};
-  auto node = makeNode(
-      "test_transform_round_trip",
-      {rclcpp::Parameter("T_B_C", flat)});
+  const std::vector<double> flat = {1.0, 0.0, 0.0, 1.0,  //
+                                    0.0, 1.0, 0.0, 2.0,  //
+                                    0.0, 0.0, 1.0, 3.0,  //
+                                    0.0, 0.0, 0.0, 1.0};
+  auto node =
+      makeNode("test_transform_round_trip", {rclcpp::Parameter("T_B_C", flat)});
 
   Transformation T;
   ASSERT_TRUE(getTransformationParam(*node, "T_B_C", "invert_T_B_C", &T));
@@ -96,19 +87,17 @@ TEST(ParamUtils, TransformationParamRoundTrip) {
 }
 
 TEST(ParamUtils, TransformationParamInverted) {
-  const std::vector<double> flat = {
-      1.0, 0.0, 0.0, 1.0,   //
-      0.0, 1.0, 0.0, 2.0,   //
-      0.0, 0.0, 1.0, 3.0,   //
-      0.0, 0.0, 0.0, 1.0};
+  const std::vector<double> flat = {1.0, 0.0, 0.0, 1.0,  //
+                                    0.0, 1.0, 0.0, 2.0,  //
+                                    0.0, 0.0, 1.0, 3.0,  //
+                                    0.0, 0.0, 0.0, 1.0};
   auto node = makeNode(
-      "test_transform_inverted",
-      {rclcpp::Parameter("T_B_C", flat),
-       rclcpp::Parameter("invert_T_B_C", true)});
+      "test_transform_inverted", {rclcpp::Parameter("T_B_C", flat),
+                                  rclcpp::Parameter("invert_T_B_C", true)});
 
   Transformation T_forward;
-  ASSERT_TRUE(getTransformationParam(
-      *node, "T_B_C", "invert_T_B_C_unset", &T_forward));
+  ASSERT_TRUE(
+      getTransformationParam(*node, "T_B_C", "invert_T_B_C_unset", &T_forward));
 
   Transformation T_inverted;
   ASSERT_TRUE(

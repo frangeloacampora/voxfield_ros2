@@ -2,10 +2,9 @@
 #define VOXFIELD_INTEGRATOR_MERGE_INTEGRATION_H_
 
 #include <algorithm>
+#include <glog/logging.h>
 #include <utility>
 #include <vector>
-
-#include <glog/logging.h>
 
 #include "voxfield/core/common.h"
 #include "voxfield/core/layer.h"
@@ -267,8 +266,9 @@ void evaluateLayerRmseAtPoses(
 
       // Initialize and get ptr to error layer to fill out later.
       (*aligned_layers_and_error_layers)[i].second =
-          typename voxfield::Layer<VoxelType>::Ptr(new voxfield::Layer<VoxelType>(
-              layer_A.voxel_size(), layer_A.voxels_per_side()));
+          typename voxfield::Layer<VoxelType>::Ptr(
+              new voxfield::Layer<VoxelType>(
+                  layer_A.voxel_size(), layer_A.voxels_per_side()));
       error_layer = (*aligned_layers_and_error_layers)[i].second.get();
 
       // Store the aligned object as well.

@@ -2,9 +2,8 @@
 #define VOXFIELD_IO_PLY_WRITER_H_
 
 #include <fstream>  // NOLINT
-#include <string>
-
 #include <glog/logging.h>
+#include <string>
 
 #include "voxfield/core/common.h"
 

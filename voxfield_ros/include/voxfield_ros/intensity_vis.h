@@ -2,7 +2,6 @@
 #define VOXFIELD_ROS_INTENSITY_VIS_H_
 
 #include <memory>
-
 #include <voxfield/utils/color_maps.h>
 #include <voxfield_msgs/msg/mesh.hpp>
 

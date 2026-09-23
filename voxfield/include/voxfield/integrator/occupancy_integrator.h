@@ -1,11 +1,10 @@
 #ifndef VOXFIELD_INTEGRATOR_OCCUPANCY_INTEGRATOR_H_
 #define VOXFIELD_INTEGRATOR_OCCUPANCY_INTEGRATOR_H_
 
-#include <algorithm>
-#include <vector>
-
 #include <Eigen/Core>
+#include <algorithm>
 #include <glog/logging.h>
+#include <vector>
 
 #include "voxfield/core/block_hash.h"
 #include "voxfield/core/layer.h"
@@ -111,8 +110,9 @@ class OccupancyIntegrator {
         }
       } else {
         end_scaled = point_G * voxel_size_inv_;
-        if (occupied_cells.find(getGridIndexFromPoint<GlobalIndex>(
-                end_scaled)) == occupied_cells.end()) {
+        if (occupied_cells.find(
+                getGridIndexFromPoint<GlobalIndex>(end_scaled)) ==
+            occupied_cells.end()) {
           castRay(start_scaled, end_scaled, &global_voxel_indices);
 
           if (global_voxel_indices.size() > 2) {

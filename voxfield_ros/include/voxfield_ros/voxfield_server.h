@@ -3,7 +3,6 @@
 
 #include <memory>
 #include <string>
-
 #include <voxfield/core/esdf_map.h>
 #include <voxfield/core/occupancy_map.h>
 #include <voxfield/integrator/esdf_voxfield_integrator.h>
@@ -107,10 +106,8 @@ class VoxfieldServer : public NpTsdfServer {
   /// Publish markers for visualization.
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       esdf_pointcloud_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-      esdf_slice_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-      traversable_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr esdf_slice_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr traversable_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       esdf_error_slice_pub_;  // py: added
 

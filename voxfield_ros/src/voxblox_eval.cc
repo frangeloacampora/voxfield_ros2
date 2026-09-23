@@ -1,5 +1,4 @@
 #include <deque>
-
 #include <gflags/gflags.h>
 #include <pcl/common/transforms.h>
 #include <pcl/conversions.h>
@@ -12,7 +11,6 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
-
 #include <voxfield/core/esdf_map.h>
 #include <voxfield/core/occupancy_map.h>
 #include <voxfield/core/tsdf_map.h>
@@ -75,10 +73,8 @@ class VoxbloxEvaluator {
   Transformation T_V_G_;
 
   // Visualization publishers.
-  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
-      mesh_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-      gt_ptcloud_pub_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr mesh_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr gt_ptcloud_pub_;
   // slice publisher
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       esdf_error_slice_pub_;
@@ -180,8 +176,7 @@ VoxbloxEvaluator::VoxbloxEvaluator(rclcpp::Node::SharedPtr node)
 
   // If doing visualizations, initialize the publishers.
   if (visualize_) {
-    const rclcpp::QoS kLatchedQos =
-        rclcpp::QoS(1).transient_local().reliable();
+    const rclcpp::QoS kLatchedQos = rclcpp::QoS(1).transient_local().reliable();
     mesh_pub_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(
         "~/mesh", kLatchedQos);
     gt_ptcloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(

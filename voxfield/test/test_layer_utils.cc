@@ -41,12 +41,15 @@ class LayerUtilsTest : public ::testing::Test,
     constexpr FloatingPoint sphere_3_radius_m = 0.075;
 
     // Prepare world A
-    simulation.addObject(std::unique_ptr<Object>(
-        new Sphere(c1_A, sphere_1_radius_m, Color(255u, 0u, 0u))));
-    simulation.addObject(std::unique_ptr<Object>(
-        new Sphere(c2_A, sphere_2_radius_m, Color(255u, 0u, 0u))));
-    simulation.addObject(std::unique_ptr<Object>(
-        new Sphere(c3_A, sphere_3_radius_m, Color(255u, 0u, 0u))));
+    simulation.addObject(
+        std::unique_ptr<Object>(
+            new Sphere(c1_A, sphere_1_radius_m, Color(255u, 0u, 0u))));
+    simulation.addObject(
+        std::unique_ptr<Object>(
+            new Sphere(c2_A, sphere_2_radius_m, Color(255u, 0u, 0u))));
+    simulation.addObject(
+        std::unique_ptr<Object>(
+            new Sphere(c3_A, sphere_3_radius_m, Color(255u, 0u, 0u))));
     simulation.generateSdfFromWorld(max_distance_world, world_.get());
   }
 

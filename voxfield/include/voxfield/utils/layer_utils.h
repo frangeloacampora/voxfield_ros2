@@ -1,9 +1,8 @@
 #ifndef VOXFIELD_UTILS_LAYER_UTILS_H_
 #define VOXFIELD_UTILS_LAYER_UTILS_H_
 
-#include <utility>
-
 #include <Eigen/Core>
+#include <utility>
 
 #include "voxfield/core/common.h"
 #include "voxfield/core/layer.h"

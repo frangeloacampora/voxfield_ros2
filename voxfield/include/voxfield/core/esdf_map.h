@@ -1,11 +1,10 @@
 #ifndef VOXFIELD_CORE_ESDF_MAP_H_
 #define VOXFIELD_CORE_ESDF_MAP_H_
 
+#include <glog/logging.h>
 #include <memory>
 #include <string>
 #include <utility>
-
-#include <glog/logging.h>
 
 #include "voxfield/core/common.h"
 #include "voxfield/core/layer.h"

@@ -1,7 +1,6 @@
 #include "voxfield_ros/voxedt_server.h"
 
 #include <chrono>
-
 #include <pcl/kdtree/kdtree_flann.h>
 
 #include "voxfield_ros/conversions.h"
@@ -70,8 +69,7 @@ void VoxedtServer::setupRos() {
   // Set up subscriber.
   esdf_map_sub_ = node_->create_subscription<voxfield_msgs::msg::Layer>(
       "~/esdf_map_in", rclcpp::QoS(1),
-      std::bind(
-          &VoxedtServer::esdfMapCallback, this, std::placeholders::_1));
+      std::bind(&VoxedtServer::esdfMapCallback, this, std::placeholders::_1));
 
   // Whether to clear each new pose as it comes in, and then set a sphere
   // around it to occupied.
@@ -94,22 +92,19 @@ void VoxedtServer::setupRos() {
 
   // services for saving maps
   save_esdf_map_srv_ = node_->create_service<voxfield_msgs::srv::FilePath>(
-      "~/save_esdf_map",
-      std::bind(
-          &VoxedtServer::saveEsdfMapCallback, this, std::placeholders::_1,
-          std::placeholders::_2));
+      "~/save_esdf_map", std::bind(
+                             &VoxedtServer::saveEsdfMapCallback, this,
+                             std::placeholders::_1, std::placeholders::_2));
 
   save_occ_map_srv_ = node_->create_service<voxfield_msgs::srv::FilePath>(
-      "~/save_occ_map",
-      std::bind(
-          &VoxedtServer::saveOccMapCallback, this, std::placeholders::_1,
-          std::placeholders::_2));
+      "~/save_occ_map", std::bind(
+                            &VoxedtServer::saveOccMapCallback, this,
+                            std::placeholders::_1, std::placeholders::_2));
 
   save_all_map_srv_ = node_->create_service<voxfield_msgs::srv::FilePath>(
-      "~/save_all_map",
-      std::bind(
-          &VoxedtServer::saveAllMapCallback, this, std::placeholders::_1,
-          std::placeholders::_2));
+      "~/save_all_map", std::bind(
+                            &VoxedtServer::saveAllMapCallback, this,
+                            std::placeholders::_1, std::placeholders::_2));
 
   // Update ESDF per xx second
   if (update_esdf_every_n_sec > 0.0) {
@@ -160,7 +155,8 @@ void VoxedtServer::visualizeEsdfError() {
   createErrorPointcloudFromEsdfLayerSlice(
       esdf_map_->getEsdfLayer(), kZAxisIndex, slice_level_, &pointcloud);
 
-  publishPclCloud(esdf_error_slice_pub_, pointcloud, world_frame_, node_->now());
+  publishPclCloud(
+      esdf_error_slice_pub_, pointcloud, world_frame_, node_->now());
 }
 
 void VoxedtServer::saveAllMapCallback(

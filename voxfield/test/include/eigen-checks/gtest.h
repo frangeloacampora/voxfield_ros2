@@ -6,10 +6,9 @@
 // ethz-asl/eigen_checks package is catkin-only; this reimplements just the
 // two macros voxfield's tests actually call.
 
-#include <sstream>
-
 #include <Eigen/Core>
 #include <gtest/gtest.h>
+#include <sstream>
 
 namespace eigen_checks {
 namespace internal {
@@ -32,8 +31,8 @@ template <typename DerivedA, typename DerivedB>
                           .maxCoeff();
   if (max_abs_diff > tolerance) {
     std::ostringstream os;
-    os << "Matrices " << a_expr << " and " << b_expr
-       << " differ by more than " << tolerance << ".\n"
+    os << "Matrices " << a_expr << " and " << b_expr << " differ by more than "
+       << tolerance << ".\n"
        << a_expr << " =\n"
        << a << "\n"
        << b_expr << " =\n"

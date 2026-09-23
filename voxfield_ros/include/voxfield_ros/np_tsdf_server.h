@@ -1,22 +1,20 @@
 #ifndef VOXFIELD_ROS_NP_TSDF_SERVER_H_
 #define VOXFIELD_ROS_NP_TSDF_SERVER_H_
 
-#include <memory>
-#include <queue>
-#include <string>
-
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <memory>
 #include <opencv2/core/mat.hpp>
 #include <pcl/conversions.h>
 #include <pcl/filters/filter.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <queue>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_srvs/srv/empty.hpp>
+#include <string>
 #include <tf2_ros/transform_broadcaster.h>
 #include <visualization_msgs/msg/marker_array.hpp>
-
 #include <voxfield/alignment/icp.h>
 #include <voxfield/core/tsdf_map.h>
 #include <voxfield/integrator/np_tsdf_integrator.h>
@@ -53,8 +51,7 @@ class NpTsdfServer {
 
   void getServerConfigFromRosParam();
 
-  void insertPointcloud(
-      sensor_msgs::msg::PointCloud2::SharedPtr pointcloud);
+  void insertPointcloud(sensor_msgs::msg::PointCloud2::SharedPtr pointcloud);
 
   void insertFreespacePointcloud(
       sensor_msgs::msg::PointCloud2::SharedPtr pointcloud);
@@ -197,10 +194,8 @@ class NpTsdfServer {
       gsdf_pointcloud_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       surface_pointcloud_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-      tsdf_slice_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-      gsdf_slice_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr tsdf_slice_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr gsdf_slice_pub_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
       occupancy_marker_pub_;
   rclcpp::Publisher<geometry_msgs::msg::TransformStamped>::SharedPtr
@@ -368,7 +363,7 @@ class NpTsdfServer {
   float fov_rad_;
 
   // For preprocessing noise filter (mianly for KITTI)
-  float min_dist_ = 0.1f;  // 2.75 for KITTI
+  float min_dist_ = 0.1f;   // 2.75 for KITTI
   float min_z_ = -1000.0f;  // -3.0 for KITTI
 
   size_t frame_count_ = 0;

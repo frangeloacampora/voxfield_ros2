@@ -1,15 +1,14 @@
 #ifndef VOXFIELD_INTEGRATOR_INTEGRATOR_UTILS_H_
 #define VOXFIELD_INTEGRATOR_INTEGRATOR_UTILS_H_
 
+#include <Eigen/Core>
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <glog/logging.h>
 #include <string>
 #include <utility>
 #include <vector>
-
-#include <Eigen/Core>
-#include <glog/logging.h>
 
 #include "voxfield/core/block_hash.h"
 #include "voxfield/core/common.h"

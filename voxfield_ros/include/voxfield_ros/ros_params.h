@@ -2,7 +2,6 @@
 #define VOXFIELD_ROS_ROS_PARAMS_H_
 
 #include <rclcpp/rclcpp.hpp>
-
 #include <voxfield/alignment/icp.h>
 #include <voxfield/core/esdf_map.h>
 #include <voxfield/core/occupancy_map.h>
@@ -21,8 +20,7 @@
 
 namespace voxfield {
 
-inline TsdfMap::Config getTsdfMapConfigFromRosParam(
-    rclcpp::Node& node) {
+inline TsdfMap::Config getTsdfMapConfigFromRosParam(rclcpp::Node& node) {
   TsdfMap::Config tsdf_config;
 
   /**
@@ -34,7 +32,9 @@ inline TsdfMap::Config getTsdfMapConfigFromRosParam(
   param(node, "tsdf_voxel_size", voxel_size);
   param(node, "tsdf_voxels_per_side", voxels_per_side);
   if (!isPowerOfTwo(voxels_per_side)) {
-    RCLCPP_ERROR(node.get_logger(), "voxels_per_side must be a power of 2, setting to default value");
+    RCLCPP_ERROR(
+        node.get_logger(),
+        "voxels_per_side must be a power of 2, setting to default value");
     voxels_per_side = tsdf_config.tsdf_voxels_per_side;
   }
 
@@ -51,8 +51,12 @@ inline ICP::Config getICPConfigFromRosParam(rclcpp::Node& node) {
   param(node, "icp_subsample_keep_ratio", icp_config.subsample_keep_ratio);
   param(node, "icp_mini_batch_size", icp_config.mini_batch_size);
   param(node, "icp_refine_roll_pitch", icp_config.refine_roll_pitch);
-  param(node, "icp_inital_translation_weighting", icp_config.inital_translation_weighting);
-  param(node, "icp_inital_rotation_weighting", icp_config.inital_rotation_weighting);
+  param(
+      node, "icp_inital_translation_weighting",
+      icp_config.inital_translation_weighting);
+  param(
+      node, "icp_inital_rotation_weighting",
+      icp_config.inital_rotation_weighting);
 
   return icp_config;
 }
@@ -85,14 +89,26 @@ inline TsdfIntegratorBase::Config getTsdfIntegratorConfigFromRosParam(
   param(node, "use_const_weight", integrator_config.use_const_weight);
   param(node, "use_weight_dropoff", integrator_config.use_weight_dropoff);
   param(node, "allow_clear", integrator_config.allow_clear);
-  param(node, "start_voxel_subsampling_factor", integrator_config.start_voxel_subsampling_factor);
-  param(node, "max_consecutive_ray_collisions", integrator_config.max_consecutive_ray_collisions);
-  param(node, "clear_checks_every_n_frames", integrator_config.clear_checks_every_n_frames);
-  param(node, "max_integration_time_s", integrator_config.max_integration_time_s);
+  param(
+      node, "start_voxel_subsampling_factor",
+      integrator_config.start_voxel_subsampling_factor);
+  param(
+      node, "max_consecutive_ray_collisions",
+      integrator_config.max_consecutive_ray_collisions);
+  param(
+      node, "clear_checks_every_n_frames",
+      integrator_config.clear_checks_every_n_frames);
+  param(
+      node, "max_integration_time_s", integrator_config.max_integration_time_s);
   param(node, "anti_grazing", integrator_config.enable_anti_grazing);
-  param(node, "use_sparsity_compensation_factor", integrator_config.use_sparsity_compensation_factor);
-  param(node, "sparsity_compensation_factor", integrator_config.sparsity_compensation_factor);
-  param(node, "integration_order_mode", integrator_config.integration_order_mode);
+  param(
+      node, "use_sparsity_compensation_factor",
+      integrator_config.use_sparsity_compensation_factor);
+  param(
+      node, "sparsity_compensation_factor",
+      integrator_config.sparsity_compensation_factor);
+  param(
+      node, "integration_order_mode", integrator_config.integration_order_mode);
   float integrator_threads = std::thread::hardware_concurrency();
   param(node, "integrator_threads", integrator_threads);
   integrator_config.integrator_threads = static_cast<int>(integrator_threads);
@@ -129,16 +145,29 @@ inline NpTsdfIntegratorBase::Config getNpTsdfIntegratorConfigFromRosParam(
   param(node, "use_const_weight", integrator_config.use_const_weight);
   param(node, "weight_reduction_exp", integrator_config.weight_reduction_exp);
   param(node, "use_weight_dropoff", integrator_config.use_weight_dropoff);
-  param(node, "weight_dropoff_epsilon", integrator_config.weight_dropoff_epsilon);
+  param(
+      node, "weight_dropoff_epsilon", integrator_config.weight_dropoff_epsilon);
   param(node, "allow_clear", integrator_config.allow_clear);
-  param(node, "start_voxel_subsampling_factor", integrator_config.start_voxel_subsampling_factor);
-  param(node, "max_consecutive_ray_collisions", integrator_config.max_consecutive_ray_collisions);
-  param(node, "clear_checks_every_n_frames", integrator_config.clear_checks_every_n_frames);
-  param(node, "max_integration_time_s", integrator_config.max_integration_time_s);
+  param(
+      node, "start_voxel_subsampling_factor",
+      integrator_config.start_voxel_subsampling_factor);
+  param(
+      node, "max_consecutive_ray_collisions",
+      integrator_config.max_consecutive_ray_collisions);
+  param(
+      node, "clear_checks_every_n_frames",
+      integrator_config.clear_checks_every_n_frames);
+  param(
+      node, "max_integration_time_s", integrator_config.max_integration_time_s);
   param(node, "anti_grazing", integrator_config.enable_anti_grazing);
-  param(node, "use_sparsity_compensation_factor", integrator_config.use_sparsity_compensation_factor);
-  param(node, "sparsity_compensation_factor", integrator_config.sparsity_compensation_factor);
-  param(node, "integration_order_mode", integrator_config.integration_order_mode);
+  param(
+      node, "use_sparsity_compensation_factor",
+      integrator_config.use_sparsity_compensation_factor);
+  param(
+      node, "sparsity_compensation_factor",
+      integrator_config.sparsity_compensation_factor);
+  param(
+      node, "integration_order_mode", integrator_config.integration_order_mode);
   float integrator_threads = std::thread::hardware_concurrency();
   param(node, "integrator_threads", integrator_threads);
   integrator_config.integrator_threads = static_cast<int>(integrator_threads);
@@ -146,13 +175,14 @@ inline NpTsdfIntegratorBase::Config getNpTsdfIntegratorConfigFromRosParam(
   param(node, "normal_available", integrator_config.normal_available);
   param(node, "reliable_band_ratio", integrator_config.reliable_band_ratio);
   param(node, "curve_assumption", integrator_config.curve_assumption);
-  param(node, "reliable_normal_ratio_thre", integrator_config.reliable_normal_ratio_thre);
+  param(
+      node, "reliable_normal_ratio_thre",
+      integrator_config.reliable_normal_ratio_thre);
 
   return integrator_config;
 }
 
-inline EsdfMap::Config getEsdfMapConfigFromRosParam(
-    rclcpp::Node& node) {
+inline EsdfMap::Config getEsdfMapConfigFromRosParam(rclcpp::Node& node) {
   EsdfMap::Config esdf_config;
 
   const TsdfMap::Config tsdf_config = getTsdfMapConfigFromRosParam(node);
@@ -172,14 +202,23 @@ inline EsdfIntegrator::Config getEsdfIntegratorConfigFromRosParam(
   esdf_integrator_config.min_distance_m =
       tsdf_integrator_config.default_truncation_distance / 2.0;
 
-  param(node, "esdf_euclidean_distance", esdf_integrator_config.full_euclidean_distance);
+  param(
+      node, "esdf_euclidean_distance",
+      esdf_integrator_config.full_euclidean_distance);
   param(node, "esdf_max_distance_m", esdf_integrator_config.max_distance_m);
   param(node, "esdf_min_distance_m", esdf_integrator_config.min_distance_m);
-  param(node, "esdf_default_distance_m", esdf_integrator_config.default_distance_m);
+  param(
+      node, "esdf_default_distance_m",
+      esdf_integrator_config.default_distance_m);
   param(node, "esdf_min_diff_m", esdf_integrator_config.min_diff_m);
-  param(node, "clear_sphere_radius", esdf_integrator_config.clear_sphere_radius);
-  param(node, "occupied_sphere_radius", esdf_integrator_config.occupied_sphere_radius);
-  param(node, "esdf_add_occupied_crust", esdf_integrator_config.add_occupied_crust);
+  param(
+      node, "clear_sphere_radius", esdf_integrator_config.clear_sphere_radius);
+  param(
+      node, "occupied_sphere_radius",
+      esdf_integrator_config.occupied_sphere_radius);
+  param(
+      node, "esdf_add_occupied_crust",
+      esdf_integrator_config.add_occupied_crust);
 
   if (esdf_integrator_config.default_distance_m <
       esdf_integrator_config.max_distance_m) {
@@ -211,9 +250,13 @@ inline OccupancyMap::Config getOccupancyMapConfigFromRosParam(
   double voxel_size = occ_config.occupancy_voxel_size;
   int voxels_per_side = occ_config.occupancy_voxels_per_side;
   param(node, "occ_voxel_size", voxel_size);
-  param(node, "occ_voxels_per_side", voxels_per_side);  // block size (unit: voxel)
+  param(
+      node, "occ_voxels_per_side",
+      voxels_per_side);  // block size (unit: voxel)
   if (!isPowerOfTwo(voxels_per_side)) {
-    RCLCPP_ERROR(node.get_logger(), "voxels_per_side must be a power of 2, setting to default value");
+    RCLCPP_ERROR(
+        node.get_logger(),
+        "voxels_per_side must be a power of 2, setting to default value");
     voxels_per_side = occ_config.occupancy_voxels_per_side;
   }
 
@@ -234,8 +277,7 @@ inline OccTsdfIntegrator::Config getOccTsdfIntegratorConfigFromRosParam(
   return integrator_config;
 }
 
-inline EsdfMap::Config getEsdfMapConfigFromOccMapRosParam(
-    rclcpp::Node& node) {
+inline EsdfMap::Config getEsdfMapConfigFromOccMapRosParam(rclcpp::Node& node) {
   EsdfMap::Config esdf_config;
 
   const OccupancyMap::Config occ_config =
@@ -246,8 +288,7 @@ inline EsdfMap::Config getEsdfMapConfigFromOccMapRosParam(
   return esdf_config;
 }
 
-inline TsdfMap::Config getTsdfMapConfigFromOccMapRosParam(
-    rclcpp::Node& node) {
+inline TsdfMap::Config getTsdfMapConfigFromOccMapRosParam(rclcpp::Node& node) {
   TsdfMap::Config tsdf_config;
 
   const OccupancyMap::Config occ_config =
@@ -258,8 +299,7 @@ inline TsdfMap::Config getTsdfMapConfigFromOccMapRosParam(
   return tsdf_config;
 }
 
-inline TsdfMap::Config getTsdfMapConfigFromEsdfMapRosParam(
-    rclcpp::Node& node) {
+inline TsdfMap::Config getTsdfMapConfigFromEsdfMapRosParam(rclcpp::Node& node) {
   TsdfMap::Config tsdf_config;
 
   const EsdfMap::Config esdf_config = getEsdfMapConfigFromRosParam(node);
@@ -285,16 +325,22 @@ getEsdfVoxfieldIntegratorConfigFromRosParam(rclcpp::Node& node) {
 
   param(node, "esdf_max_distance_m", esdf_integrator_config.max_distance_m);
 
-  param(node, "esdf_default_distance_m", esdf_integrator_config.default_distance_m);
+  param(
+      node, "esdf_default_distance_m",
+      esdf_integrator_config.default_distance_m);
 
   param(node, "fix_band_distance_m", esdf_integrator_config.band_distance_m);
 
-  param(node, "max_behind_surface_m", esdf_integrator_config.max_behind_surface_m);
+  param(
+      node, "max_behind_surface_m",
+      esdf_integrator_config.max_behind_surface_m);
   // max_behind_surface_m should be at least sqrt(3) * truncation_dist
 
   param(node, "occ_min_weight", esdf_integrator_config.min_weight);
 
-  param(node, "occ_voxel_size_ratio", esdf_integrator_config.occ_voxel_size_ratio);
+  param(
+      node, "occ_voxel_size_ratio",
+      esdf_integrator_config.occ_voxel_size_ratio);
 
   param(node, "num_buckets", esdf_integrator_config.num_buckets);
 
@@ -312,8 +358,7 @@ getEsdfVoxfieldIntegratorConfigFromRosParam(rclcpp::Node& node) {
 }
 
 inline EsdfOccFiestaIntegrator::Config
-getEsdfOccFiestaIntegratorConfigFromRosParam(
-    rclcpp::Node& node) {  // NOLINT
+getEsdfOccFiestaIntegratorConfigFromRosParam(rclcpp::Node& node) {  // NOLINT
   EsdfOccFiestaIntegrator::Config esdf_integrator_config;
 
   int range_boundary_offset_x = esdf_integrator_config.range_boundary_offset(0);
@@ -331,9 +376,13 @@ getEsdfOccFiestaIntegratorConfigFromRosParam(
 
   param(node, "esdf_max_distance_m", esdf_integrator_config.max_distance_m);
 
-  param(node, "esdf_default_distance_m", esdf_integrator_config.default_distance_m);
+  param(
+      node, "esdf_default_distance_m",
+      esdf_integrator_config.default_distance_m);
 
-  param(node, "max_behind_surface_m", esdf_integrator_config.max_behind_surface_m);
+  param(
+      node, "max_behind_surface_m",
+      esdf_integrator_config.max_behind_surface_m);
   // max_behind_surface_m should be at least sqrt(3) * truncation_dist
 
   param(node, "num_buckets", esdf_integrator_config.num_buckets);
@@ -368,9 +417,13 @@ inline EsdfOccEdtIntegrator::Config getEsdfEdtIntegratorConfigFromRosParam(
 
   param(node, "esdf_max_distance_m", esdf_integrator_config.max_distance_m);
 
-  param(node, "esdf_default_distance_m", esdf_integrator_config.default_distance_m);
+  param(
+      node, "esdf_default_distance_m",
+      esdf_integrator_config.default_distance_m);
 
-  param(node, "max_behind_surface_m", esdf_integrator_config.max_behind_surface_m);
+  param(
+      node, "max_behind_surface_m",
+      esdf_integrator_config.max_behind_surface_m);
   // max_behind_surface_m should be at least sqrt(3) * truncation_dist
 
   param(node, "num_buckets", esdf_integrator_config.num_buckets);

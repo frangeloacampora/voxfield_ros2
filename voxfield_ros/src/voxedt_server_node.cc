@@ -1,6 +1,5 @@
-#include "voxfield_ros/voxedt_server.h"
-
 #include "voxfield_ros/node_main.h"
+#include "voxfield_ros/voxedt_server.h"
 
 int main(int argc, char** argv) {
   rclcpp::init(argc, argv);

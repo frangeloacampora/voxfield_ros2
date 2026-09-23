@@ -2,12 +2,10 @@
 #define VOXFIELD_ROS_INTERACTIVE_SLIDER_H_
 
 #include <functional>
-#include <string>
-
 #include <interactive_markers/interactive_marker_server.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <string>
 #include <visualization_msgs/msg/interactive_marker_feedback.hpp>
-
 #include <voxfield/core/common.h>
 
 namespace voxfield {
