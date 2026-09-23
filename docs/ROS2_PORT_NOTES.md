@@ -212,3 +212,34 @@ the wire format; no additional test was added.
 sourced) and the normal shell (Hector underlay sourced). `colcon test
 --packages-select voxfield && colcon test-result --verbose` -- 50 tests, 0
 errors, 0 failures, 0 skipped.
+
+### Environment fix: miniconda's `python3` breaks `rosidl` (affects every phase from here on)
+
+Not part of the plan's §2 environment facts, found in Phase 4: `PATH` puts
+`~/miniconda3/bin` before `/opt/ros/jazzy/bin` and `/usr/bin`, so every ROS 2
+build/tool that shells out to `python3` (rosidl's generators, in particular)
+runs under miniconda's Python 3.13, not the system Python 3.12 the apt
+`python3-*` ROS 2 dependencies were installed against. Two miniconda-side
+gaps, both fixed by installing into miniconda's site-packages (reversible;
+`pip uninstall`/pin back if this environment is used for anything else):
+- `lark` wasn't installed at all (`rosidl_generator_type_description`,
+  `rosidl_generator_rs` import `rosidl_parser.parser`, which needs it) ->
+  `pip install lark` (got 1.3.1).
+- miniconda had `empy` 4.2.1 (pip's newer, API-incompatible fork) where
+  ROS 2 Jazzy's `rosidl_generator_rs` needs the classic EmPy 3.3.x API
+  (matching the apt `python3-empy` 3.3.4-2 that's actually installed for
+  the system Python) -> `pip install "empy==3.3.4"`.
+
+## Phase 4: `voxfield_msgs`
+
+`package.xml` format 3 (`ament_cmake` + `rosidl_default_generators`
+buildtool, `std_msgs`/`nav_msgs` depend, `rosidl_default_runtime`
+exec_depend, `rosidl_interface_packages` group). `CMakeLists.txt`:
+`rosidl_generate_interfaces()` over all 7 `.msg` + `FilePath.srv`,
+`DEPENDENCIES std_msgs nav_msgs`. Contents unchanged from D14 (cross-package
+type refs already read `voxfield_msgs/...` from the Phase 1 rename;
+`FilePath.srv` already had its empty-response `---` and is untouched).
+
+**Accept:** builds (0 errors, clean env + normal shell). `ros2 interface
+show voxfield_msgs/msg/Layer`, `.../MultiMesh`, and
+`voxfield_msgs/srv/FilePath` all print correctly (verified manually).
