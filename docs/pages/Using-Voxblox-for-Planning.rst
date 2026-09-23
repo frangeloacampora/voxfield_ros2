@@ -6,7 +6,7 @@ The planners described in `Continuous-Time Trajectory Optimization for Online UA
 
 In the mean-time, the general idea behind using voxblox for planning is to have two nodes running: one for the mapping, which ingests pointcloud data and produces both a TSDF and an ESDF, and one for planning, which subscribes to the latest ESDF layer over ROS.
 
-The planner should have a ``voxblox::EsdfServer`` as a member, and simply remap the ``esdf_map_out`` and ``esdf_map_in`` topics to match.
+The planner should have a ``voxfield::EsdfServer`` as a member, and simply remap the ``esdf_map_out`` and ``esdf_map_in`` topics to match.
 
 A sample launch file is shown below:
 
@@ -19,7 +19,7 @@ A sample launch file is shown below:
     <arg name="world_frame" default="odom" />
     <group ns="$(arg robot_name)">
 
-      <node name="voxblox_node" pkg="voxblox_ros" type="esdf_server" output="screen" args="-alsologtostderr" clear_params="true">
+      <node name="voxblox_node" pkg="voxfield_ros" type="esdf_server" output="screen" args="-alsologtostderr" clear_params="true">
         <remap from="pointcloud" to="great_sensor/my_pointcloud"/>
         <remap from="voxblox_node/esdf_map_out" to="esdf_map" />
         <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
@@ -59,7 +59,7 @@ And some scaffolding for writing your own planner using ESDF collision checking:
     ros::NodeHandle nh_private_;
 
     // Map!
-    voxblox::EsdfServer voxblox_server_;
+    voxfield::EsdfServer voxblox_server_;
   };
 
 There's also a traversability pointcloud you can enable/disable, that if you set the radius to your robot's collision checking radius, can show you parts of the map the planner thinks are traversable in a pointcloud:

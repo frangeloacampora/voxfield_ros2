@@ -39,4 +39,4 @@ If you have already initalized wstool replace the above ``wstool init`` with ``w
 Compile::
 
 	cd ~/catkin_ws/src/
-	catkin build voxblox_ros
+	catkin build voxfield_ros

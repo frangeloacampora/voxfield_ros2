@@ -12,7 +12,7 @@ Voxblox is a volumetric mapping library based mainly on Truncated Signed Distanc
 * Serialization using protobufs
 * Different ways of handling weighting during merging
 * Different ways of inserting pose information about scans
-* Tight ROS integration (in voxblox_ros package)
+* Tight ROS integration (in voxfield_ros package)
 * Easily extensible with whatever integrators you want
 * Features an implementation of building Euclidean Signed Distance Fields (ESDFs, EDTs) directly from TSDFs.
 

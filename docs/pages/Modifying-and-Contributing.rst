@@ -58,7 +58,7 @@ How to add your own voxel/layer type
 
 .. code-block:: bash
 
-	namespace voxblox {
+	namespace voxfield {
 
 	// Used for serialization only.
 	namespace voxel_types {
@@ -70,13 +70,13 @@ How to add your own voxel/layer type
 	 return voxel_types::kYOUR_FANCY_VOXEL;
 	}
 
-	}  // namespace voxblox
+	}  // namespace voxfield
 
 - Implement the block (de)serialization functions for your voxel type, e.g. ``fancy_block_serialization.cc``
 
 .. code-block:: bash
 
-	namespace voxblox {
+	namespace voxfield {
 
 	template <>
 	void Block<YOUR_FANCY_VOXEL>::DeserializeVoxelData(const BlockProto& proto,
@@ -90,7 +90,7 @@ How to add your own voxel/layer type
 	// Your serialization code.
 	}
 
-	}  // namespace voxblox
+	}  // namespace voxfield
 
 - Create your own fancy_integrator.h, fancy_mesh_integrator.h, ...
 

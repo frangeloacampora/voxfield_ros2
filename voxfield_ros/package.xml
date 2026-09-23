@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>voxfield_ros</name>
+  <version>0.0.0</version>
+  <description>Voxfield ROS interface</description>
+
+  <author email="helen.oleynikova@mavt.ethz.ch">Helen Oleynikova</author>
+  <author email="marius.fehr@mavt.ethz.ch">Marius Fehr</author>
+
+  <maintainer email="helen.oleynikova@mavt.ethz.ch">Helen Oleynikova</maintainer>
+  <maintainer email="marius.fehr@mavt.ethz.ch">Marius Fehr</maintainer>
+
+  <license>BSD</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>catkin_simple</buildtool_depend>
+
+  <depend>cv_bridge</depend>
+  <depend>gflags_catkin</depend>
+  <depend>interactive_markers</depend>
+  <depend>minkindr_conversions</depend>
+  <depend>pcl_conversions</depend>
+  <depend>pcl_ros</depend>
+  <depend>sensor_msgs</depend>
+  <depend>tf</depend>
+  <depend>voxfield</depend>
+  <depend>voxfield_msgs</depend>
+  <depend>voxfield_rviz_plugin</depend>
+</package>

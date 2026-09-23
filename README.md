@@ -38,7 +38,7 @@ And then compile Voxfield with:
 
 ```
 cd ~/catkin_ws/src/
-catkin build voxblox_ros
+catkin build voxfield_ros
 ```
 
 To avoid the potential conflict, if the original voxblox was installed, it's better to remove voxblox from `catkin_ws/src`.
@@ -64,22 +64,22 @@ wget http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/data.bag
 wget http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/voxblox_cow_extras.zip
 ```
 
-2. Set the `bag_file` path in the launch files `./voxblox_ros/launch/voxfield_launch/cow_voxfield.launch` to the path storing the Cow & Lady bag file.
+2. Set the `bag_file` path in the launch files `./voxfield_ros/launch/voxfield_launch/cow_voxfield.launch` to the path storing the Cow & Lady bag file.
 3. Run Voxfield mapping on the Cow & Lady dataset:
 
 ```
-roslaunch voxblox_ros cow_voxfield.launch
+roslaunch voxfield_ros cow_voxfield.launch
 ```
 
 ### Run on the KITTI real-world LiDAR or stereo dataset
 
 1. Download the full dataset [here](http://www.cvlibs.net/datasets/kitti/eval_odometry.php) or a rosbag of sequence07 [here](https://drive.google.com/file/d/1_qUfwUw88rEKitUpt1kjswv7Cv4GPs0b/view).
    Then use the [kitti_to_rosbag](https://github.com/ethz-asl/kitti_to_rosbag) package to convert the full dataset to rosbags.
-2. Set the `bag_file` path in the launch files `./voxblox_ros/launch/voxfield_launch/kitti_voxfield.launch` to the path storing the KITTI bag file.
+2. Set the `bag_file` path in the launch files `./voxfield_ros/launch/voxfield_launch/kitti_voxfield.launch` to the path storing the KITTI bag file.
 3. Run Voxfield mapping on the KITTI dataset:
 
 ```
-roslaunch voxblox_ros kitti_voxfield.launch
+roslaunch voxfield_ros kitti_voxfield.launch
 ```
 
 ### Run on the MaiCity synthetic LiDAR dataset
@@ -91,18 +91,18 @@ wget https://www.ipb.uni-bonn.de/html/projects/mai_city/mai_city.tar.gz
 tar -xvf mai_city.tar.gz
 ```
 
-2. Set the `bag_file` path in the launch files `./voxblox_ros/launch/voxfield_launch/mai_voxfield.launch` to the path storing the MaiCity bag file.
+2. Set the `bag_file` path in the launch files `./voxfield_ros/launch/voxfield_launch/mai_voxfield.launch` to the path storing the MaiCity bag file.
 3. Run Voxfield mapping on the MaiCity dataset:
 
 ```
-roslaunch voxblox_ros mai_voxfield.launch
+roslaunch voxfield_ros mai_voxfield.launch
 ```
 
 ### Run on your own data (TBA)
 
 ### Customizing, comparison and evaluation
 
-To change the mapping and visualization parameters such as voxel size and truncation distance, please configure the `.yaml` files under `./voxblox_ros/cfg/param/` folder.
+To change the mapping and visualization parameters such as voxel size and truncation distance, please configure the `.yaml` files under `./voxfield_ros/cfg/param/` folder.
 
 For the comparison with other state-of-the-art methods (Voxblox, FIESTA, EDT), set the `bag_file` path in the corresponding launch file `[dataset]_[method].launch` and launch it.
 
