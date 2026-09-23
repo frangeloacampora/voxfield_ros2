@@ -649,3 +649,78 @@ type.
 
 **Accept (plan §6 Phase 8):** met, with the rendering caveat above noted
 for Phase 12.
+
+## Phase 9: Configuration files
+
+Wrote `scripts/convert_ros1_params.py` (PyYAML) and ran it in place over
+every shipped ROS 1 parameter file. It: loads with `yaml.safe_load` (which
+already resolves `&anchor`/`*alias` references — no special handling
+needed, PyYAML's safe loader supports anchors natively), recursively
+flattens any list-of-lists of numbers found anywhere in the tree into a
+row-major list of Python `float`s (catches `T_B_C`, `T_B_D`, `T_C_CH`,
+`T_D_C`, `T_D_B` uniformly, by shape rather than by name, so it needs no
+per-key allowlist), wraps the result as `/**:\n  ros__parameters:\n ...`,
+and — before writing anything to disk — re-verifies its own output
+(`verify()`): every scalar must round-trip byte-identical and every
+matrix must flatten to the same numbers in the same order as the
+original. Comment preservation was left out (PyYAML drops them on
+re-dump); the plan calls this a nice-to-have, and none of the shipped
+files' comments carry information not already in an adjacent key name.
+
+### Files converted
+`cfg/param/{basement,cow,kitti,mai,vicon}_param.yaml`,
+`cfg/calib/{basement,cow,kitti,mai,vicon,euroc}_calib.yaml`,
+`cfg/kitti_lidar.yaml`, `cfg/rgbd_dataset.yaml`,
+`cfg/stereo/{kitti_stereo,kitti_stereo_bm,kitti_stereo_jager}.yaml` (the
+last three convert cleanly but are unused — see plan §1.3, the stereo
+pipeline is out of scope; converted anyway per the plan's "for
+completeness" instruction).
+
+### Decision: `cfg/calib/euroc_camchain.yaml` left unconverted
+This is Kalibr camchain output (nested per-camera maps with
+`distortion_coeffs`, `intrinsics`, `resolution`, `rostopic`, etc.), not a
+`rosparam`-loaded file — no in-scope launch file loads it via
+`<rosparam file=...>` or would load it via ROS 2 `--params-file`. Its
+only reference anywhere in the repo is `launch/bak/euroc_dataset.launch`
+(out of scope per plan §1.3/§6 Phase 10 step 2), and even that reference
+is itself broken — it points at `cfg/calibrations/euroc_camchain.yaml`,
+a directory that has never existed in this repo (the real path is
+`cfg/calib/`). Wrapping this file in `ros__parameters` would misrepresent
+its actual purpose (external Kalibr tooling reads it in its native
+format) for no benefit, since nothing in this repo would ever load it as
+a ROS parameter file either before or after the port. Left byte-identical.
+
+### Found (pre-existing upstream bug, not touched): `T_B_D::` typo in `euroc_calib.yaml`
+The original ROS 1 file has `T_B_D::` (double colon) instead of `T_B_D:`.
+PyYAML parses this as a mapping with a literal key `"T_B_D:"` (trailing
+colon included in the key name) rather than raising a syntax error, so
+the conversion script's round-trip-preserving design carried the typo
+through faithfully — the converted file has key `'T_B_D:'`, still not
+`T_B_D`. This means `T_B_D` was never actually readable as a ROS
+parameter under this name in the ROS 1 version either (`rosparam load`
+would have set the same bogus key). Not fixed, per the plan's "don't fix
+upstream bugs silently" rule (§0.5) — and moot in practice, since
+`euroc_calib.yaml` isn't loaded by any in-scope (non-`bak/`) launch file.
+
+### Verification (plan §6 Phase 9 accept criteria)
+- `voxfield_server --ros-args --params-file cfg/param/kitti_param.yaml
+  --params-file cfg/calib/kitti_calib.yaml` starts with no parse errors.
+- `ros2 param dump` on the running node confirms `tsdf_voxel_size: 0.25`
+  (from the `&voxel_size` anchor in the original `kitti_param.yaml`) and
+  `T_C_CH` present as the same 16 values, same row-major order, as the
+  original nested 4x4 list in `kitti_calib.yaml`:
+  `[-1,0,0,0, 0,0,1,1.8, 0,1,0,0, 0,0,0,1]`.
+- `update_esdf_every_n_sec: 0` (an int-looking value that's read as a
+  `double` in `NpTsdfServerConfig`, plan pitfall §8.5) was deliberately
+  left as the YAML-inferred integer type rather than forced to `0.0` --
+  the tolerant `voxfield::param()` helper (D6, ported in Phase 5) already
+  coerces `PARAMETER_INTEGER` -> `double` at load time, and forcing every
+  scalar to float would make the converted files diverge from what a
+  human reading the original would expect for genuinely-integer params
+  (`width`, `height`, `num_buckets`, `integration_threads`, ...). Only
+  the flattened matrix elements are unconditionally forced to `float`,
+  per the plan's explicit instruction for those.
+- Every conversion's `verify()` step passed (script would have raised
+  `AssertionError` and left the file untouched on any mismatch).
+
+**Accept (plan §6 Phase 9):** met.

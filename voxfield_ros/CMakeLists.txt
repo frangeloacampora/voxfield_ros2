@@ -170,6 +170,10 @@ install(
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
+install(
+  DIRECTORY cfg/
+  DESTINATION share/${PROJECT_NAME}/cfg
+)
 
 ament_export_targets(${PROJECT_NAME}Targets HAS_LIBRARY_TARGET)
 ament_export_dependencies(${VOXFIELD_ROS_DEPENDENCIES} voxfield PCL OpenCV glog gflags)
