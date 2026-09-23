@@ -16,7 +16,9 @@ fi
 
 env -i HOME="$HOME" USER="$USER" TERM="$TERM" DISPLAY="${DISPLAY:-}" \
   bash --noprofile --norc -c '
-    set -euo pipefail
+    # -u is deliberately not set here: /opt/ros/jazzy/setup.bash references
+    # unset variables (e.g. AMENT_TRACE_SETUP_FILES) and is not nounset-safe.
+    set -e -o pipefail
     source /opt/ros/jazzy/setup.bash
     if [ -f "'"$WS"'/install/setup.bash" ]; then
       source "'"$WS"'/install/setup.bash"

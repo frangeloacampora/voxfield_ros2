@@ -122,3 +122,93 @@ unchanged, so `.vxblx`/`.tsdf` files written by ROS 1 voxfield/voxblox should
 still load post-rename (protobuf wire format doesn't encode the `package`
 name). A concrete round-trip verification test is added in Phase 3 step 6
 per the plan.
+
+## Phase 3: `voxfield` core library ported to `ament_cmake`
+
+`package.xml` bumped to format 3 (`ament_cmake` buildtool; `depend` on
+`eigen`, `libgoogle-glog-dev`, `libgflags-dev`, `protobuf-dev`; `test_depend
+ament_cmake_gtest`). `CMakeLists.txt` rewritten for `ament_cmake` per plan
+§6 Phase 3, with two deviations from the plan's shorthand, both because the
+literal instructions don't work as written against this toolchain:
+
+- **Protobuf generation.** `protobuf_generate(TARGET ... IMPORT_DIRS proto
+  PROTOC_OUT_DIR ...)` (the plan's suggested call) always prepends
+  `-I ${CMAKE_CURRENT_SOURCE_DIR}` (i.e. `voxfield/`) to protoc's include
+  path *before* `IMPORT_DIRS`, in FindProtobuf.cmake as shipped with CMake
+  3.28 -- and since that's also a valid prefix of
+  `proto/voxfield/Block.proto`, protoc picks it first and names the file
+  `proto.voxfield.Block`, generating `proto/voxfield/Block.pb.h`, not
+  `voxfield/Block.pb.h` as the plan calls for. `CMakeLists.txt` instead
+  invokes `protoc` directly via `add_custom_command`, passing only
+  `-I ${CMAKE_CURRENT_SOURCE_DIR}/proto`, so the generated header is really
+  `voxfield/Block.pb.h` and `#include "voxfield/Block.pb.h"` resolves as
+  intended. (Needed `file(MAKE_DIRECTORY ...)` for the output dir up front
+  too -- protoc doesn't create it.)
+- **Build type default.** Plain `ament_cmake` (unlike a typical catkin
+  profile) leaves `CMAKE_BUILD_TYPE` unset if colcon/the user doesn't pass
+  one, meaning no `-DNDEBUG` and no optimization. `CMakeLists.txt` now
+  defaults it to `Release` (the standard `if(NOT CMAKE_BUILD_TYPE ...)
+  set(... "Release" ...)` boilerplate most ament packages use) when unset.
+  Found necessary because of a real bug this surfaced -- see below.
+
+**`eigen-checks` test shim** (`voxfield/test/include/eigen-checks/{gtest.h,
+entrypoint.h}`, test-only, only on the 3 affected test targets' include
+path): `EIGEN_MATRIX_EQUAL`/`EIGEN_MATRIX_NEAR` reimplemented as templates
+returning `::testing::AssertionResult` (element-wise max-abs-diff vs.
+tolerance); `entrypoint.h` just defines the unused `UNITTEST_ENTRYPOINT`
+macro so the `#include` compiles (all 3 tests that pull it in define their
+own `main()`). Used by `test_tsdf_map.cc`, `test_tsdf_interpolator.cc`,
+`test_layer_utils.cc` (3 files, not the 2 the plan estimated).
+
+**Tests:** all 10 gtests wired up via `ament_add_gtest`, linked against
+`voxfield`. No `test_data` custom target ported -- `test/test_data/` doesn't
+exist anywhere in this repo (the old `add_custom_command` copied from it
+with `|| :` swallowing the resulting error), so there was nothing to copy.
+
+**Found bug (pre-existing, not a port regression) -- documented per plan
+§0 item 6, not fixed:** `Layer::allocateNewBlockByCoordinates()`
+(`voxfield/include/voxfield/core/layer.h`) calls `allocateNewBlock()`
+unconditionally, which `DCHECK(insert_status.second) << "Block already
+exists..."`s if the block's already there, instead of checking
+`getBlockPtrByIndex()` first the way `allocateBlockPtrByIndex()` does two
+methods above it. `test_tsdf_map.cc`'s `BlockAllocation` test calls
+`allocateNewBlockByCoordinates()` twice with coordinates that map to the
+same block and expects it to be idempotent -- so the test only passes
+because `DCHECK` compiles out under `NDEBUG` (i.e. only in a Release
+build). This is pre-existing (unrelated to anything renamed or ported;
+`layer.h`'s allocation logic is untouched apart from the mechanical
+rename) and was latent under ROS 1 too for the same reason: nothing in the
+original `catkin_simple`-based `CMakeLists.txt` set a build type either,
+so it depended on whatever the workspace's catkin profile configured.
+Confirmed via GDB-free evidence: this exact `DCHECK` fires (glog aborts)
+when built without `CMAKE_BUILD_TYPE=Release`, and both this test and the
+three below run and pass once it's set. Not fixed here per the plan's
+behavior-preservation rule; a real fix (make
+`allocateNewBlockByCoordinates()` check-then-allocate) is a candidate for
+a follow-up, non-port PR.
+
+**Also explained by the same unset-build-type issue:** `test_merge_integration`,
+`test_sdf_integrators`, and `test_clear_spheres` integrate sizeable
+simulated worlds (50 poses, fine voxel grids, multiple integrator variants
+per test) and were timing out against `ament_add_gtest`'s 60s default
+under an unoptimized build (4m36s total for the 4 affected tests). With
+`CMAKE_BUILD_TYPE=Release` the full 10-test/50-assertion suite runs in
+~13-34s. No `TIMEOUT` overrides were needed once the build type was fixed.
+
+**Map-file compatibility (plan step 6):** no original ROS 1-written
+`.tsdf`/`.vxblx` file exists anywhere in this repo (`test/test_data/`
+doesn't exist, confirmed above) to load and check. `test_protobuf.cc`
+already exercises `SaveLayer`/`LoadLayer` round-trips extensively
+(`BlockSerialization`, `LayerSerialization`, `LayerSerializationToFile`,
+`LayerSubsetSerializationToFile`, `LayerSubsetSerializationFromFile`,
+`MultipleLayerSerialization`, across Tsdf/Occupancy/Esdf/Intensity voxel
+types) using the renamed `voxfield.BlockProto`/`voxfield.LayerProto`
+messages, and all pass. Per D1, protobuf wire format doesn't encode the
+`package` name, so this is sufficient evidence the rename didn't change
+the wire format; no additional test was added.
+
+**Acceptance (plan §6 Phase 3):** `colcon build --packages-up-to voxfield`
+-- 0 errors, verified both in `scripts/clean_env.sh` (only `/opt/ros/jazzy`
+sourced) and the normal shell (Hector underlay sourced). `colcon test
+--packages-select voxfield && colcon test-result --verbose` -- 50 tests, 0
+errors, 0 failures, 0 skipped.
