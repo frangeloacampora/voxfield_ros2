@@ -1,15 +1,15 @@
-<library path="lib/libvoxfield_rviz_plugin">
+<library path="voxfield_rviz_plugin">
   <class name="voxfield_rviz_plugin/VoxfieldMesh"
          type="voxfield_rviz_plugin::VoxfieldMeshDisplay"
-         base_class_type="rviz::Display">
+         base_class_type="rviz_common::Display">
     <description>Displays incremental voxfield mesh messages.</description>
-    <message_type>voxfield_msgs/Mesh</message_type>
+    <message_type>voxfield_msgs/msg/Mesh</message_type>
   </class>
 
   <class name="voxfield_rviz_plugin/VoxfieldMultiMesh"
          type="voxfield_rviz_plugin::VoxfieldMultiMeshDisplay"
-         base_class_type="rviz::Display">
+         base_class_type="rviz_common::Display">
     <description>Displays incremental voxfield mesh messages for multiple meshes.</description>
-    <message_type>voxfield_msgs/MultiMesh</message_type>
+    <message_type>voxfield_msgs/msg/MultiMesh</message_type>
   </class>
 </library>

@@ -2,8 +2,8 @@
 
 #include <limits>
 
-#include <OGRE/OgreSceneManager.h>
-#include <OGRE/OgreSceneNode.h>
+#include <OgreSceneManager.h>
+#include <OgreSceneNode.h>
 
 #include <voxfield/mesh/mesh_utils.h>
 
@@ -35,8 +35,8 @@ void VoxfieldMeshVisual::setPose(
 }
 
 void VoxfieldMeshVisual::setMessage(
-    const voxfield_msgs::Mesh::ConstPtr& msg, uint8_t alpha) {
-  for (const voxfield_msgs::MeshBlock& mesh_block : msg->mesh_blocks) {
+    voxfield_msgs::msg::Mesh::ConstSharedPtr msg, uint8_t alpha) {
+  for (const voxfield_msgs::msg::MeshBlock& mesh_block : msg->mesh_blocks) {
     const voxfield::BlockIndex index(
         mesh_block.index[0], mesh_block.index[1], mesh_block.index[2]);
 

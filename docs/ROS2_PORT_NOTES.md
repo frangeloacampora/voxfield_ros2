@@ -545,3 +545,107 @@ errors in the log. `voxfield_server`'s full `ros2 node info` output
 the ESDF-specific topics (`~/esdf_pointcloud`, `~/esdf_slice`, `~/
 esdf_map_out`, `~/esdf_map_in`, `~/save_esdf_map`) layered on top of the
 Phase 6 NpTsdfServer set; a live `~/clear_map` service call returns.
+
+## Phase 8: `voxfield_rviz_plugin`
+
+Ported `voxfield_mesh_display.{h,cc}`, `voxfield_multi_mesh_display.{h,cc}`,
+`voxfield_mesh_visual.{h,cc}`, and `material_loader.{h,cc}` from `rviz`
+(Qt5/Ogre1, catkin_simple) to `rviz_common` (Qt5/Ogre1 via
+`rviz_ogre_vendor`, `ament_cmake`). The rename to `voxfield_*` identifiers,
+`VoxfieldMaterial*`/`VoxfieldMaterials` Ogre names, and `VoxfieldMesh.png`/
+`VoxfieldMultiMesh.png` icons had already landed in Phase 1; this phase is
+the ROS 1 → ROS 2 API port only, no further renaming.
+
+### Mechanical translations
+- `rviz::MessageFilterDisplay<voxfield_msgs::Mesh>` →
+  `rviz_common::MessageFilterDisplay<voxfield_msgs::msg::Mesh>`;
+  `processMessage(const T::ConstPtr&)` → `processMessage(T::ConstSharedPtr)`
+  (by value, matching the new pure-virtual signature).
+- `#include <OGRE/OgreFoo.h>` → `#include <OgreFoo.h>` (Ogre headers are no
+  longer nested under an `OGRE/` prefix in `rviz_ogre_vendor`).
+- `ros::package::getPath("voxfield_rviz_plugin")` →
+  `ament_index_cpp::get_package_share_directory("voxfield_rviz_plugin")`
+  in `material_loader.cc`.
+- `context_->getFrameManager()->getTransform(frame, stamp, position,
+  orientation)` — same argument order and return convention in
+  `rviz_common::FrameManagerIface`; only the header and Ogre includes
+  changed. `ros::Time::now()` → `context_->getFrameManager()->getTime()`
+  (the rviz2-idiomatic replacement that respects the display's sync mode
+  during bag playback, rather than a free-standing `rclcpp::Clock`, per the
+  same reasoning as plan D12 for the server code). Message stamps go
+  through `rclcpp::Time(msg->header.stamp, RCL_ROS_TIME)`, consistent with
+  every other stamp conversion in this port.
+- `PLUGINLIB_EXPORT_CLASS(..., rviz::Display)` →
+  `PLUGINLIB_EXPORT_CLASS(..., rviz_common::Display)`;
+  `#include <pluginlib/class_list_macros.h>` →
+  `<pluginlib/class_list_macros.hpp>`.
+- `plugin_description.xml`: `base_class_type="rviz::Display"` →
+  `"rviz_common::Display"`, `message_type` `voxfield_msgs/Mesh` →
+  `voxfield_msgs/msg/Mesh` (and the `MultiMesh` equivalent), `<library
+  path="lib/libvoxfield_rviz_plugin">` → `path="voxfield_rviz_plugin"`
+  (ament_cmake's pluginlib loader resolves the library by package-relative
+  name, not a `lib/` path).
+
+### Design decision: dropped the ROS 1 custom `subscribe()`/`onInitialize()` override in `VoxfieldMultiMeshDisplay`
+The ROS 1 class overrode `subscribe()` to get a 1000-deep subscriber queue
+(vs. the base class's default) and a manual reliable/unreliable transport
+toggle, plus overrode `onInitialize()` to push the same queue depth into
+`tf_filter_`. In `rviz_common`, `_RosTopicDisplay` already ships a
+`QosProfileProperty` in every topic-based display's property panel, which
+gives the user the reliable/best-effort toggle for free — reimplementing
+the ROS 1 raw-transport-hint logic would just be a worse duplicate of that
+built-in control. So Phase 8 keeps `MessageFilterDisplay<MultiMesh>` as
+the base (unchanged from ROS 1) but, instead of overriding `subscribe()`/
+`onInitialize()`, sets the *defaults* the base class already exposes:
+`qos_profile = rclcpp::QoS(kSubscriberQueueLength)` (subscription depth)
+and `message_queue_property_->setInt(kSubscriberQueueLength)` (tf2
+message-filter queue depth), both in the constructor. Net behavior is the
+same — a 1000-deep queue and a user-editable reliability setting — with
+less code and no reimplemented ROS 2 transport plumbing. Both values stay
+user-editable in the property panel afterwards, same as before.
+
+### Everything else ported 1:1
+`fixedFrameChanged()` in both display classes deliberately does *not* call
+the `MessageFilterDisplay` base implementation (which would call `reset()`
+and clear the built-up mesh) — it replicates the ROS 1 override exactly:
+`tf_filter_->setTargetFrame(...)` followed by an in-place transform update,
+so an incrementally-built mesh survives a fixed-frame change exactly as it
+did in ROS 1. The `VisibilityField` per-namespace visibility tree, the
+`VoxfieldMultiMeshDisplay::update()` throttled polling of all visual poses,
+and the alpha/normal/color mesh-block-to-Ogre-object translation in
+`VoxfieldMeshVisual::setMessage()` are unchanged apart from the message
+type.
+
+### Verification
+- Clean build with zero errors and zero warnings (`-Wall -Wextra`) in both
+  `scripts/clean_env.sh` and the user's normal shell with the Hector
+  underlay sourced.
+- `nm -D` on the built `libvoxfield_rviz_plugin.so` confirms the
+  `class_loader`-registered symbols are namespaced under
+  `voxfield_rviz_plugin::VoxfieldMeshDisplay` /
+  `::VoxfieldMultiMeshDisplay`, and the ament resource index entry
+  (`share/ament_index/resource_index/rviz_common__pluginlib__plugin/
+  voxfield_rviz_plugin`) is separate from Hector's `voxblox_rviz_plugin`
+  entry — the two are independently discoverable by rviz2's "Add → By
+  display type" dialog.
+- Launched `rviz2` (in an isolated `env -i` shell sourcing only
+  `/opt/ros/jazzy` + the workspace install, to sidestep an unrelated,
+  pre-existing environment issue where this machine's VS Code/snap
+  environment breaks `rviz2`'s libpthread resolution — not a port bug,
+  reproduces identically with Hector's own unmodified `rviz2` binary) with
+  a config instantiating both `VoxfieldMesh` and `VoxfieldMultiMesh`: no
+  pluginlib load errors, no Ogre resource-group exceptions, ran cleanly
+  for the full duration.
+- Repeated with Hector's `voxblox_rviz_plugin` also sourced and a third
+  `VoxbloxMesh` display added to the same rviz2 session (same isolated
+  shell, now sourcing `/opt/ros/jazzy` + Hector's underlay + the
+  workspace): all three displays load together with no Ogre material
+  clash and no pluginlib class-name collision, confirming the Phase 1
+  rename achieved its goal for the RViz layer, not just for the core
+  library/messages.
+- No dataset/bag was available for this phase, so mesh *rendering* itself
+  (as opposed to plugin loading and material/resource setup) is unverified
+  pixel-for-pixel; that falls under Phase 12 (needs real datasets).
+
+**Accept (plan §6 Phase 8):** met, with the rendering caveat above noted
+for Phase 12.

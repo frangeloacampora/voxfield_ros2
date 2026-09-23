@@ -1,10 +1,11 @@
 #include "voxfield_rviz_plugin/voxfield_multi_mesh_display.h"
 
-#include <OGRE/OgreSceneManager.h>
-#include <OGRE/OgreSceneNode.h>
+#include <OgreSceneManager.h>
+#include <OgreSceneNode.h>
 
-#include <rviz/visualization_manager.h>
-#include <tf/transform_listener.h>
+#include <rviz_common/display_context.hpp>
+#include <rviz_common/frame_manager_iface.hpp>
+#include <rviz_common/logging.hpp>
 
 #include "voxfield_rviz_plugin/material_loader.h"
 
@@ -18,6 +19,13 @@ VoxfieldMultiMeshDisplay::VoxfieldMultiMeshDisplay()
   voxfield_rviz_plugin::MaterialLoader::loadMaterials();
   // Initialize the top level of the visibility hierarchy.
   visibility_fields_.reset(new VisibilityField("Visible", this, this));
+
+  // Multi-mesh submaps can arrive in large bursts, so default both the
+  // subscription QoS depth and the tf2 message-filter queue to a larger
+  // value than rviz_common's defaults (5 / 10). Both stay user-editable
+  // in the property panel afterwards.
+  qos_profile = rclcpp::QoS(kSubscriberQueueLength);
+  message_queue_property_->setInt(kSubscriberQueueLength);
 }
 
 void VoxfieldMultiMeshDisplay::reset() {
@@ -38,7 +46,8 @@ void VoxfieldMultiMeshDisplay::updateVisible() {
     }
     ns_visual_pair.second.setEnabled(visible);
     if (visible) {
-      updateTransformation(&(ns_visual_pair.second), ros::Time::now());
+      updateTransformation(
+          &(ns_visual_pair.second), context_->getFrameManager()->getTime());
     }
   }
 }
@@ -53,7 +62,7 @@ void VoxfieldMultiMeshDisplay::toggleVisibilityAllSLOT() {
 }
 
 void VoxfieldMultiMeshDisplay::processMessage(
-    const voxfield_msgs::MultiMesh::ConstPtr& msg) {
+    voxfield_msgs::msg::MultiMesh::ConstSharedPtr msg) {
   // Select the matching visual
   auto it = visuals_.find(msg->name_space);
   if (msg->mesh.mesh_blocks.empty()) {
@@ -76,7 +85,8 @@ void VoxfieldMultiMeshDisplay::processMessage(
 
     // update the frame, pose and mesh of the visual.
     it->second.setFrameId(msg->header.frame_id);
-    if (updateTransformation(&(it->second), msg->header.stamp)) {
+    if (updateTransformation(
+            &(it->second), rclcpp::Time(msg->header.stamp, RCL_ROS_TIME))) {
       // here we use the multi-mesh msg header.
       // catch uninitialized alpha values, since nobody wants to display a
       // completely invisible mesh.
@@ -86,30 +96,31 @@ void VoxfieldMultiMeshDisplay::processMessage(
       }
 
       // convert to normal mesh msg for visual
-      voxfield_msgs::MeshPtr mesh(new voxfield_msgs::Mesh);
-      *mesh = msg->mesh;
+      auto mesh = std::make_shared<voxfield_msgs::msg::Mesh>(msg->mesh);
       it->second.setMessage(mesh, alpha);
     }
   }
 }
 
 bool VoxfieldMultiMeshDisplay::updateTransformation(
-    VoxfieldMeshVisual* visual, ros::Time stamp) {
+    VoxfieldMeshVisual* visual, rclcpp::Time stamp) {
   // Look up the transform from tf. If it doesn't work we have to skip.
   Ogre::Quaternion orientation;
   Ogre::Vector3 position;
   if (!context_->getFrameManager()->getTransform(
           visual->getFrameId(), stamp, position, orientation)) {
-    ROS_DEBUG(
-        "Error transforming from frame '%s' to frame '%s'",
-        visual->getFrameId().c_str(), qPrintable(fixed_frame_));
+    RVIZ_COMMON_LOG_DEBUG_STREAM(
+        "Error transforming from frame '" << visual->getFrameId()
+                                           << "' to frame '"
+                                           << fixed_frame_.toStdString()
+                                           << "'");
     return false;
   }
   visual->setPose(position, orientation);
   return true;
 }
 
-void VoxfieldMultiMeshDisplay::update(float wall_dt, float ros_dt) {
+void VoxfieldMultiMeshDisplay::update(float wall_dt, float /*ros_dt*/) {
   constexpr float kMinUpdateDt = 1e-1;
   dt_since_last_update_ += wall_dt;
   if (isEnabled() && kMinUpdateDt < dt_since_last_update_) {
@@ -120,7 +131,8 @@ void VoxfieldMultiMeshDisplay::update(float wall_dt, float ros_dt) {
 
 void VoxfieldMultiMeshDisplay::updateAllTransformations() {
   for (auto& visual : visuals_) {
-    updateTransformation(&(visual.second), ros::Time::now());
+    updateTransformation(
+        &(visual.second), context_->getFrameManager()->getTime());
   }
 }
 
@@ -130,40 +142,10 @@ void VoxfieldMultiMeshDisplay::fixedFrameChanged() {
   updateAllTransformations();
 }
 
-void VoxfieldMultiMeshDisplay::subscribe() {
-  // Override this to allow for custom queue size, the rest is taken from
-  // rviz::MessageFilterDisplay.
-  if (!isEnabled()) {
-    return;
-  }
-  try {
-    ros::TransportHints transport_hint = ros::TransportHints().reliable();
-    // Determine UDP vs TCP transport for user selection.
-    if (unreliable_property_->getBool()) {
-      transport_hint = ros::TransportHints().unreliable();
-    }
-    sub_.subscribe(
-        update_nh_, topic_property_->getTopicStd(), kSubscriberQueueLength,
-        transport_hint);
-    setStatus(rviz::StatusProperty::Ok, "Topic", "OK");
-  } catch (ros::Exception& e) {
-    setStatus(
-        rviz::StatusProperty::Error, "Topic",
-        QString("Error subscribing: ") + e.what());
-  }
-}
-
-void VoxfieldMultiMeshDisplay::onInitialize() {
-  // Override this to allow for custom queue size, the rest is taken from
-  // rviz::MessageFilterDisplay.
-  MessageFilterDisplay::onInitialize();
-  tf_filter_->setQueueSize(kSubscriberQueueLength);
-}
-
 VisibilityField::VisibilityField(
-    const std::string& name, rviz::BoolProperty* parent,
+    const std::string& name, rviz_common::properties::BoolProperty* parent,
     VoxfieldMultiMeshDisplay* master)
-    : rviz::BoolProperty(
+    : rviz_common::properties::BoolProperty(
           name.c_str(), true,
           "Show or hide the mesh. If the mesh is hidden but not disabled, it "
           "will persist and is incrementally built in the background.",
@@ -262,6 +244,6 @@ void VisibilityField::setEnabledForAll(bool enabled) {
 
 }  // namespace voxfield_rviz_plugin
 
-#include <pluginlib/class_list_macros.h>
+#include <pluginlib/class_list_macros.hpp>
 PLUGINLIB_EXPORT_CLASS(
-    voxfield_rviz_plugin::VoxfieldMultiMeshDisplay, rviz::Display)
+    voxfield_rviz_plugin::VoxfieldMultiMeshDisplay, rviz_common::Display)

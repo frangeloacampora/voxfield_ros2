@@ -5,11 +5,11 @@
 #include <map>
 #include <string>
 
-#include <OGRE/OgreManualObject.h>
+#include <OgreManualObject.h>
 
 #include <voxfield/core/block_hash.h>
-#include <voxfield_msgs/Mesh.h>
-#include <voxfield_msgs/MultiMesh.h>
+#include <voxfield_msgs/msg/mesh.hpp>
+#include <voxfield_msgs/msg/multi_mesh.hpp>
 
 namespace voxfield_rviz_plugin {
 
@@ -22,7 +22,7 @@ class VoxfieldMeshVisual {
   virtual ~VoxfieldMeshVisual();
 
   void setMessage(
-      const voxfield_msgs::Mesh::ConstPtr& msg,
+      voxfield_msgs::msg::Mesh::ConstSharedPtr msg,
       uint8_t alpha = std::numeric_limits<uint8_t>::max());
 
   // enable / disable visibility

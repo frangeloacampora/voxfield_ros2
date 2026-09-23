@@ -1,74 +1,109 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.8)
 project(voxfield_rviz_plugin)
 
-find_package(catkin_simple REQUIRED)
-catkin_simple(ALL_DEPS_REQUIRED)
-
-set(CMAKE_MACOSX_RPATH 0)
-add_definitions(-std=c++11 -Wall)
-
-## This setting causes Qt's "MOC" generation to happen automatically.
-set(CMAKE_AUTOMOC ON)
-
-## This plugin includes Qt widgets, so we must include Qt.
-## We'll use the version that rviz used so they are compatible.
-if(rviz_QT_VERSION VERSION_LESS "5")
-  message(STATUS "Using Qt4 based on the rviz_QT_VERSION: ${rviz_QT_VERSION}")
-  find_package(Qt4 ${rviz_QT_VERSION} EXACT REQUIRED QtCore QtGui)
-  ## pull in all required include dirs, define QT_LIBRARIES, etc.
-  include(${QT_USE_FILE})
-  qt4_wrap_cpp(MOC_FILES
-    ${INCLUDE_FILES_QT}
-  )
-else()
-  message(STATUS "Using Qt5 based on the rviz_QT_VERSION: ${rviz_QT_VERSION}")
-  find_package(Qt5 ${rviz_QT_VERSION} EXACT REQUIRED Core Widgets)
-  ## make target_link_libraries(${QT_LIBRARIES}) pull in all required dependencies
-  set(QT_LIBRARIES Qt5::Widgets)
-  QT5_WRAP_CPP(MOC_FILES
-    ${INCLUDE_FILES_QT}
-  )
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra)
 endif()
 
-## Avoid Qt signals and slots defining "emit", "slots", etc.
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rviz_common REQUIRED)
+find_package(rviz_rendering REQUIRED)
+find_package(rviz_ogre_vendor REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(ament_index_cpp REQUIRED)
+find_package(voxfield REQUIRED)
+find_package(voxfield_msgs REQUIRED)
+find_package(Qt5 REQUIRED COMPONENTS Widgets)
+
+# Qt's MOC generation happens automatically for headers with Q_OBJECT that
+# are listed as target sources.
+set(CMAKE_AUTOMOC ON)
+
+# Avoid Qt signals and slots defining "emit", "slots", etc.
 add_definitions(-DQT_NO_KEYWORDS)
 
 set(HEADER_FILES
-        include/voxfield_rviz_plugin/voxfield_mesh_display.h
-        include/voxfield_rviz_plugin/voxfield_multi_mesh_display.h
-        include/voxfield_rviz_plugin/voxfield_mesh_visual.h
-        include/voxfield_rviz_plugin/material_loader.h
-        )
+  include/voxfield_rviz_plugin/voxfield_mesh_display.h
+  include/voxfield_rviz_plugin/voxfield_multi_mesh_display.h
+  include/voxfield_rviz_plugin/voxfield_mesh_visual.h
+  include/voxfield_rviz_plugin/material_loader.h
+)
 
 set(SRC_FILES
-        src/voxfield_mesh_display.cc
-        src/voxfield_multi_mesh_display.cc
-        src/voxfield_mesh_visual.cc
-        src/material_loader.cc
-        )
+  src/voxfield_mesh_display.cc
+  src/voxfield_multi_mesh_display.cc
+  src/voxfield_mesh_visual.cc
+  src/material_loader.cc
+)
 
-cs_add_library(${PROJECT_NAME}
+add_library(${PROJECT_NAME} SHARED
   ${SRC_FILES}
   ${HEADER_FILES}
-  ${MOC_FILES}
+)
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
+)
+ament_target_dependencies(${PROJECT_NAME} PUBLIC
+  rclcpp
+  rviz_common
+  rviz_rendering
+  pluginlib
+  ament_index_cpp
+  voxfield_msgs
+)
+target_link_libraries(${PROJECT_NAME} PUBLIC
+  voxfield::voxfield
+  rviz_ogre_vendor::OgreMain
+  Qt5::Widgets
 )
 
-target_link_libraries(${PROJECT_NAME}
-  ${QT_LIBRARIES}
-)
-
+pluginlib_export_plugin_description_file(rviz_common plugin_description.xml)
 
 ##########
 # EXPORT #
 ##########
-
+install(
+  DIRECTORY include/
+  DESTINATION include/${PROJECT_NAME}
+)
+install(
+  TARGETS ${PROJECT_NAME}
+  EXPORT ${PROJECT_NAME}Targets
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
 install(
   FILES plugin_description.xml
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
-
+  DESTINATION share/${PROJECT_NAME}
+)
 install(
   DIRECTORY icons/
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/icons)
+  DESTINATION share/${PROJECT_NAME}/icons
+)
+install(
+  DIRECTORY content/
+  DESTINATION share/${PROJECT_NAME}/content
+)
 
-cs_install()
-cs_export()
+ament_export_targets(${PROJECT_NAME}Targets HAS_LIBRARY_TARGET)
+ament_export_dependencies(
+  rclcpp
+  rviz_common
+  rviz_rendering
+  rviz_ogre_vendor
+  pluginlib
+  ament_index_cpp
+  voxfield
+  voxfield_msgs
+  Qt5
+)
+ament_export_include_directories(include/${PROJECT_NAME})
+
+ament_package()

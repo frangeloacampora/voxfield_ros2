@@ -1,19 +1,33 @@
 <?xml version="1.0"?>
-<package format="2">
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
   <name>voxfield_rviz_plugin</name>
   <version>0.0.0</version>
-  <description>RViz plugin for displaying incremental voxfield mesh messages.</description>
+  <description>RViz2 plugin for displaying incremental voxfield mesh messages.</description>
   <maintainer email="ztaylorr@ethz.ch">Zachary Taylor</maintainer>
   <license>BSD</license>
   <author>Zachary Taylor</author>
-  
-  <buildtool_depend>catkin</buildtool_depend>
-  <buildtool_depend>catkin_simple</buildtool_depend>
 
-  <depend>rviz</depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <build_depend>qtbase5-dev</build_depend>
+  <build_depend>rviz_ogre_vendor</build_depend>
+  <build_export_depend>rviz_ogre_vendor</build_export_depend>
+  <exec_depend>libqt5-core</exec_depend>
+  <exec_depend>libqt5-gui</exec_depend>
+  <exec_depend>libqt5-widgets</exec_depend>
+  <exec_depend>rviz_ogre_vendor</exec_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rviz_common</depend>
+  <depend>rviz_rendering</depend>
+  <depend>pluginlib</depend>
+  <depend>ament_index_cpp</depend>
   <depend>voxfield</depend>
   <depend>voxfield_msgs</depend>
+
   <export>
-      <rviz plugin="${prefix}/plugin_description.xml"/>
+    <build_type>ament_cmake</build_type>
+    <rviz plugin="${prefix}/plugin_description.xml"/>
   </export>
 </package>

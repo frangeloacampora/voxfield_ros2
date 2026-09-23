@@ -1,11 +1,13 @@
 #include "voxfield_rviz_plugin/voxfield_mesh_display.h"
 
-#include <OGRE/OgreSceneManager.h>
-#include <OGRE/OgreSceneNode.h>
+#include <OgreSceneManager.h>
+#include <OgreSceneNode.h>
 
-#include <rviz/visualization_manager.h>
-#include <tf/transform_listener.h>
-#include <voxfield_rviz_plugin/material_loader.h>
+#include <rviz_common/display_context.hpp>
+#include <rviz_common/frame_manager_iface.hpp>
+#include <rviz_common/logging.hpp>
+
+#include "voxfield_rviz_plugin/material_loader.h"
 
 namespace voxfield_rviz_plugin {
 
@@ -28,13 +30,13 @@ void VoxfieldMeshDisplay::visibleSLOT() {
     // Set visibility and update the pose if visibility is turned on.
     visual_->setEnabled(visible_property_.getBool());
     if (visible_property_.getBool()) {
-      updateTransformation(ros::Time::now());
+      updateTransformation(context_->getFrameManager()->getTime());
     }
   }
 }
 
 void VoxfieldMeshDisplay::processMessage(
-    const voxfield_msgs::Mesh::ConstPtr& msg) {
+    voxfield_msgs::msg::Mesh::ConstSharedPtr msg) {
   if (!visual_) {
     visual_.reset(
         new VoxfieldMeshVisual(context_->getSceneManager(), scene_node_));
@@ -43,12 +45,12 @@ void VoxfieldMeshDisplay::processMessage(
 
   // update the frame, pose and mesh of the visual
   visual_->setFrameId(msg->header.frame_id);
-  if (updateTransformation(msg->header.stamp)) {
+  if (updateTransformation(rclcpp::Time(msg->header.stamp, RCL_ROS_TIME))) {
     visual_->setMessage(msg);
   }
 }
 
-bool VoxfieldMeshDisplay::updateTransformation(ros::Time stamp) {
+bool VoxfieldMeshDisplay::updateTransformation(rclcpp::Time stamp) {
   if (!visual_) {
     // can not get the transform if we don't have a visual
     return false;
@@ -58,9 +60,11 @@ bool VoxfieldMeshDisplay::updateTransformation(ros::Time stamp) {
   Ogre::Vector3 position;
   if (!context_->getFrameManager()->getTransform(
           visual_->getFrameId(), stamp, position, orientation)) {
-    ROS_DEBUG(
-        "Error transforming from frame '%s' to frame '%s'",
-        visual_->getFrameId().c_str(), qPrintable(fixed_frame_));
+    RVIZ_COMMON_LOG_DEBUG_STREAM(
+        "Error transforming from frame '" << visual_->getFrameId()
+                                           << "' to frame '"
+                                           << fixed_frame_.toStdString()
+                                           << "'");
     return false;
   }
   visual_->setPose(position, orientation);
@@ -70,10 +74,11 @@ bool VoxfieldMeshDisplay::updateTransformation(ros::Time stamp) {
 void VoxfieldMeshDisplay::fixedFrameChanged() {
   tf_filter_->setTargetFrame(fixed_frame_.toStdString());
   // update the transformation of the visuals w.r.t fixed frame
-  updateTransformation(ros::Time::now());
+  updateTransformation(context_->getFrameManager()->getTime());
 }
 
 }  // namespace voxfield_rviz_plugin
 
-#include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(voxfield_rviz_plugin::VoxfieldMeshDisplay, rviz::Display)
+#include <pluginlib/class_list_macros.hpp>
+PLUGINLIB_EXPORT_CLASS(
+    voxfield_rviz_plugin::VoxfieldMeshDisplay, rviz_common::Display)

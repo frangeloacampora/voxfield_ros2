@@ -6,8 +6,10 @@
 #include <string>
 #include <unordered_map>
 
-#include <rviz/message_filter_display.h>
-#include <voxfield_msgs/MultiMesh.h>
+#include <rclcpp/time.hpp>
+#include <rviz_common/message_filter_display.hpp>
+#include <rviz_common/properties/bool_property.hpp>
+#include <voxfield_msgs/msg/multi_mesh.hpp>
 
 #include "voxfield_rviz_plugin/voxfield_mesh_visual.h"
 
@@ -17,7 +19,7 @@ class VoxfieldMeshVisual;
 class VisibilityField;
 
 class VoxfieldMultiMeshDisplay
-    : public rviz::MessageFilterDisplay<voxfield_msgs::MultiMesh> {
+    : public rviz_common::MessageFilterDisplay<voxfield_msgs::msg::MultiMesh> {
   Q_OBJECT
 
  public:
@@ -30,17 +32,18 @@ class VoxfieldMultiMeshDisplay
   void reset() override;
   void fixedFrameChanged() override;
 
-  // Override subscribe to enable a custom queue size of more than 10.
-  static constexpr uint32_t kSubscriberQueueLength = 1000;
-  void subscribe() override;
-  void onInitialize() override;
+  // Use a custom default queue size of more than the base class' 10, since
+  // multi-mesh submaps can arrive in large bursts. The value is only a
+  // default: it stays user-editable via the "Filter size" / QoS properties.
+  static constexpr int kSubscriberQueueLength = 1000;
 
   // Automatically update the mesh poses based on their frame_ids.
   void update(float wall_dt, float ros_dt) override;
 
  private:
-  void processMessage(const voxfield_msgs::MultiMesh::ConstPtr& msg) override;
-  bool updateTransformation(VoxfieldMeshVisual* visual, ros::Time stamp);
+  void processMessage(
+      voxfield_msgs::msg::MultiMesh::ConstSharedPtr msg) override;
+  bool updateTransformation(VoxfieldMeshVisual* visual, rclcpp::Time stamp);
   void updateAllTransformations();
 
   // The set of all visuals, identified by namespace.
@@ -51,7 +54,7 @@ class VoxfieldMultiMeshDisplay
   Q_SLOT void visibleSlot();
 
   // Property to set visibility for all submaps.
-  rviz::BoolProperty toggle_visibility_all_property_;
+  rviz_common::properties::BoolProperty toggle_visibility_all_property_;
   Q_SLOT void toggleVisibilityAllSLOT();
 
   // Keep track of the time that elapsed since we last updated the submap poses,
@@ -60,11 +63,11 @@ class VoxfieldMultiMeshDisplay
 };
 
 // Allow the user to show hide sets of submaps based on the name spaces.
-class VisibilityField : public rviz::BoolProperty {
+class VisibilityField : public rviz_common::properties::BoolProperty {
   Q_OBJECT
  public:
   VisibilityField(
-      const std::string& name, rviz::BoolProperty* parent,
+      const std::string& name, rviz_common::properties::BoolProperty* parent,
       VoxfieldMultiMeshDisplay* master);
   void addField(const std::string& field_name);
   void removeField(const std::string& field_name);
