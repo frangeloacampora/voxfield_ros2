@@ -1099,3 +1099,108 @@ invocation, not just the fake-publisher subprocess.
 `scripts/clean_env.sh`). Full-workspace `colcon test`: 80 tests, 0
 errors, 0 failures, 4 skipped (the 4 non-`voxfield` methods'
 slice/save/load subtest, intentionally skipped -- mesh-only per the plan).
+
+### Step 2: unit tests
+
+`colcon test` / `colcon test-result --verbose`: 80 tests, 0 errors, 0
+failures, 4 intentionally skipped (above). Re-confirmed in both the clean
+env and the user's normal shell with the Hector underlay sourced (step 3
+below covers the latter).
+
+### Step 3: coexistence check
+
+Full clean rebuild (`rm -rf build install log`, then `colcon build
+--symlink-install`) and `colcon test` in an isolated shell sourcing
+`/opt/ros/jazzy` **and** the Hector underlay (not `scripts/clean_env.sh`,
+which deliberately excludes Hector -- a one-off variant of it for this
+check): 0 build errors, 80/80 tests still passing, including all 5 smoke
+tests. `rviz2` loaded `cfg/rviz/kitti_25cm.rviz` (which references
+`voxfield_rviz_plugin/VoxfieldMesh`) with no errors in this same
+Hector-sourced environment, consistent with the Phase 8/10 coexistence
+checks.
+
+### Step 5: TF-queue mode
+
+`scripts/fake_sensor_publisher.py` gained a `publish_tf` parameter
+(default `true`): set to `false`, it publishes a
+`geometry_msgs/TransformStamped` on `transform_topic` (default
+`transform`, matching `Transformer`'s subscription -- see
+`transformer.cc`) instead of broadcasting TF, and -- so the queue
+actually has something to interpolate between -- publishes the point
+cloud at half the transform rate, guaranteeing every cloud's stamp falls
+strictly between two queued transforms.
+
+Verified manually (not added as a 6th permanent smoke-test target, since
+the plan frames Phase 12 step 5 as a one-off exercise of the path, not a
+regression gate): `voxblox_server` with `cow_param.yaml`/`cow_calib.yaml`
+(`use_tf_transforms: false`, the dataset the plan names for this check)
+against the fake publisher in `publish_tf:=false` mode. `ros2 node info`
+confirmed the `/transform` subscription
+(`geometry_msgs/msg/TransformStamped`); the log showed exactly two
+`[WARN] No match found for transform timestamp` lines right at startup
+(queue empty, then queue not yet full) and *no further occurrences* as
+the queue filled -- i.e. `Transformer::lookupTransformQueue`'s
+interpolation path ran and worked, not spammed. Mesh/ESDF integration
+continued normally throughout.
+
+### Step 4: dataset run, against a real ROS 2 bag (not KITTI/MaiCity)
+
+No ROS 1 KITTI/MaiCity/Cow-and-Lady bag was available in this
+environment. The user instead provided a **native ROS 2 bag** (mcap,
+`rosbag2_2026_09_23-12_40_03/`, 4.1 GiB, 138.9 s) recorded from a real
+mobile-manipulator robot ("Athena"), carrying `/athena/front_lidar/
+points_raw_livox` and `/athena/back_lidar/points_raw_livox`
+(`sensor_msgs/msg/PointCloud2` from a Livox lidar) plus a full URDF-
+derived TF tree on `/athena/tf`/`/athena/tf_static` with a real
+`map -> odom -> ... -> front_lidar_laser_frame` chain. This needed no
+`rosbags-convert` step (already ROS 2), but did need a bespoke param
+file (`world_frame: map`, `sensor_frame: front_lidar_laser_frame`,
+`voxel_size: 0.1`, ICP disabled -- not committed to the repo, since it's
+specific to this local bag, not a shipped dataset preset) and bag-side
+topic remaps (`ros2 bag play --remap /athena/front_lidar/
+points_raw_livox:=/pointcloud /athena/tf:=/tf /athena/tf_static:=/tf_static`)
+so the server's un-namespaced subscriptions and `tf2_ros::TransformListener`
+(which listens on the global `/tf`/`/tf_static`, not a namespaced variant)
+lined up without any code changes.
+
+A Livox point cloud isn't the organized, fixed-width x height range image
+`NpTsdfServer`/`VoxfieldServer`'s projective integration expects (per
+plan §7 -- solid-state/non-repetitive-scan lidars don't produce that
+shape), so this run exercised the three **non-projective, ray-casting**
+`TsdfServer` subclasses instead, per the user's request: `voxblox_server`,
+`fiesta_server`, `voxedt_server`. All three, run against ~25s of the bag:
+
+- Built a real mesh (`~/generate_mesh` + `mesh_filename` -> a non-empty
+  ASCII PLY each time): `voxblox_server` 27550 vertices/23840 faces,
+  `fiesta_server` 27318/23667, `voxedt_server` 27335/23694 -- all three
+  independently reconstructing essentially the same real scene geometry,
+  as expected.
+- `timing: true` output present throughout (200+ `SM Timing` blocks
+  logged per run).
+- Exactly one transient `Invalid frame ID "..." passed to canTransform`
+  warning per run, in the first ~3s before the TF tree was fully
+  populated from `/tf_static` -- not ongoing spam, and it stopped once
+  the tree filled in.
+- Visually confirmed in `rviz2` for `fiesta_server`: launched the bag +
+  server + `rviz2` (with a `voxfield_rviz_plugin/VoxfieldMesh` display on
+  `~/mesh`) together and screenshotted the live result -- real
+  reconstructed room/warehouse structure, not a blank or broken display.
+  Screenshot: `docs/assets/phase12_fiesta_mesh_rviz.png`.
+
+`voxfield_server`/`np_tsdf_server` were **not** exercised against this
+bag (out of scope for this run, per the point above); they remain
+validated only via the Phase 12 step 1 synthetic smoke test and the
+Phase 6/7 manual checks. A genuine KITTI/MaiCity/Cow-and-Lady run, which
+would exercise the projective path against real (rather than synthetic)
+organized/RGB-D data, is still pending a suitable ROS 1 bag -- see the
+Definition of Done note below.
+
+**Accept (plan §6 Phase 12):** steps 1, 2, 3, and 5 fully met. Step 4 met
+for the three ray-casting methods against real robot data (not the
+plan's suggested KITTI/MaiCity), with the projective-path/KITTI-or-MaiCity
+portion still pending external data -- reported here explicitly per the
+plan's own fallback ("stop here, report that, and tell the user exactly
+which commands to run"). To run it once a bag is available:
+`rosbags-convert --src <bag>.bag --dst <bag>_ros2`, then `ros2 launch
+voxfield_ros kitti_voxfield.launch.py bag_file:=<bag>_ros2` (or
+`mai_voxfield.launch.py` / `cow_voxfield.launch.py`).

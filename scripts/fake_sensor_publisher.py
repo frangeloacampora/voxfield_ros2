@@ -11,16 +11,29 @@ guaranteed to hit a wall, floor, or ceiling (the room is airtight and the
 sensor never leaves it), so the cloud is fully dense (`is_dense: true`,
 no NaNs) every frame.
 
-Also broadcasts a moving `world -> <sensor_frame>` TF at the same rate,
-so both the projective (NpTsdfServer/VoxfieldServer) and non-projective
-(TsdfServer/VoxbloxServer/FiestaServer/VoxedtServer) integration paths
-have real geometry and real motion to integrate, without needing an
-external dataset.
+By default also broadcasts a moving `world -> <sensor_frame>` TF at the
+same rate, so both the projective (NpTsdfServer/VoxfieldServer) and
+non-projective (TsdfServer/VoxbloxServer/FiestaServer/VoxedtServer)
+integration paths have real geometry and real motion to integrate,
+without needing an external dataset.
+
+With `publish_tf:=false` (the `cow`/`vicon` dataset shape, i.e.
+`use_tf_transforms: false`), publishes a
+`geometry_msgs/TransformStamped` on `transform_topic` instead of
+broadcasting TF -- exercising `Transformer`'s queue/interpolation path
+(ROS2_PORT_PLAN.md §6 Phase 12 step 5) rather than its `tf2_ros::Buffer`
+path. In that mode the transform is published twice as often as the
+point cloud (point clouds on even ticks only), so every cloud's stamp
+falls strictly between two queued transforms and
+`Transformer::lookupTransformQueue`'s interpolation actually runs instead
+of exact-match lookup.
 
 ROS parameters (all optional, defaults match kitti_calib.yaml):
     world_frame (string, "world")
     sensor_frame (string, "velodyne")
     pointcloud_topic (string, "pointcloud")
+    publish_tf (bool, true): broadcast TF vs. publish a transform topic.
+    transform_topic (string, "transform"): used when publish_tf is false.
     width (int, 1024), height (int, 64)
     fov_up_deg (double, 3.0), fov_down_deg (double, -25.0)
     room_half_x (double, 5.0), room_half_y (double, 5.0), room_height (double, 3.0)
@@ -44,6 +57,8 @@ class FakeSensorPublisher(Node):
         self.declare_parameter("world_frame", "world")
         self.declare_parameter("sensor_frame", "velodyne")
         self.declare_parameter("pointcloud_topic", "pointcloud")
+        self.declare_parameter("publish_tf", True)
+        self.declare_parameter("transform_topic", "transform")
         self.declare_parameter("width", 1024)
         self.declare_parameter("height", 64)
         self.declare_parameter("fov_up_deg", 3.0)
@@ -86,9 +101,17 @@ class FakeSensorPublisher(Node):
         self.start_time = self.get_clock().now()
 
         pointcloud_topic = self.get_parameter("pointcloud_topic").value
+        self.publish_tf = self.get_parameter("publish_tf").value
         self.cloud_pub = self.create_publisher(PointCloud2, pointcloud_topic, 10)
-        self.tf_broadcaster = TransformBroadcaster(self)
+        if self.publish_tf:
+            self.tf_broadcaster = TransformBroadcaster(self)
+        else:
+            transform_topic = self.get_parameter("transform_topic").value
+            self.transform_pub = self.create_publisher(
+                TransformStamped, transform_topic, 40
+            )
 
+        self.tick_count = 0
         period = 1.0 / rate_hz
         self.timer = self.create_timer(period, self.tick)
 
@@ -134,42 +157,53 @@ class FakeSensorPublisher(Node):
         now = self.get_clock().now()
         t_sec = (now - self.start_time).nanoseconds * 1e-9
         position, yaw = self.sensor_pose(t_sec)
+        self.tick_count += 1
 
-        points_local = self.raycast(position, yaw)
+        # In transform-topic mode, publish the cloud at half the transform
+        # rate so every cloud stamp is bracketed by two queued transforms,
+        # exercising Transformer::lookupTransformQueue's interpolation
+        # instead of the tf2_ros::Buffer path's own interpolation.
+        publish_cloud = self.publish_tf or (self.tick_count % 2 == 0)
 
-        header = Header()
-        header.stamp = now.to_msg()
-        header.frame_id = self.sensor_frame
+        if publish_cloud:
+            points_local = self.raycast(position, yaw)
 
-        cloud = PointCloud2()
-        cloud.header = header
-        cloud.height = self.height
-        cloud.width = self.width
-        cloud.fields = [
-            PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
-            PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
-            PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
-        ]
-        cloud.is_bigendian = False
-        cloud.point_step = 12
-        cloud.row_step = cloud.point_step * self.width
-        cloud.is_dense = True
-        cloud.data = points_local.tobytes()
-        self.cloud_pub.publish(cloud)
+            header = Header()
+            header.stamp = now.to_msg()
+            header.frame_id = self.sensor_frame
+
+            cloud = PointCloud2()
+            cloud.header = header
+            cloud.height = self.height
+            cloud.width = self.width
+            cloud.fields = [
+                PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
+                PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
+                PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
+            ]
+            cloud.is_bigendian = False
+            cloud.point_step = 12
+            cloud.row_step = cloud.point_step * self.width
+            cloud.is_dense = True
+            cloud.data = points_local.tobytes()
+            self.cloud_pub.publish(cloud)
 
         cos_yaw2, sin_yaw2 = np.cos(yaw / 2.0), np.sin(yaw / 2.0)
-        tf_msg = TransformStamped()
-        tf_msg.header.stamp = now.to_msg()
-        tf_msg.header.frame_id = self.world_frame
-        tf_msg.child_frame_id = self.sensor_frame
-        tf_msg.transform.translation.x = float(position[0])
-        tf_msg.transform.translation.y = float(position[1])
-        tf_msg.transform.translation.z = float(position[2])
-        tf_msg.transform.rotation.x = 0.0
-        tf_msg.transform.rotation.y = 0.0
-        tf_msg.transform.rotation.z = float(sin_yaw2)
-        tf_msg.transform.rotation.w = float(cos_yaw2)
-        self.tf_broadcaster.sendTransform(tf_msg)
+        transform_msg = TransformStamped()
+        transform_msg.header.stamp = now.to_msg()
+        transform_msg.header.frame_id = self.world_frame
+        transform_msg.child_frame_id = self.sensor_frame
+        transform_msg.transform.translation.x = float(position[0])
+        transform_msg.transform.translation.y = float(position[1])
+        transform_msg.transform.translation.z = float(position[2])
+        transform_msg.transform.rotation.x = 0.0
+        transform_msg.transform.rotation.y = 0.0
+        transform_msg.transform.rotation.z = float(sin_yaw2)
+        transform_msg.transform.rotation.w = float(cos_yaw2)
+        if self.publish_tf:
+            self.tf_broadcaster.sendTransform(transform_msg)
+        else:
+            self.transform_pub.publish(transform_msg)
 
 
 def main(args=None):
