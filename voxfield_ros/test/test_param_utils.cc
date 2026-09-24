@@ -119,6 +119,25 @@ TEST(ParamUtils, TransformationParamWrongSizeReturnsFalse) {
   EXPECT_FALSE(getTransformationParam(*node, "T_B_C", "invert_T_B_C", &T));
 }
 
+TEST(ParamUtils, EurocCalibTransformsLoadFromYaml) {
+  // Regression for "Known upstream issues" #7: euroc_calib.yaml spelled the
+  // key `T_B_D::`, which YAML parses as a literal `T_B_D:` key, so T_B_D was
+  // never readable under its real name.
+  rclcpp::NodeOptions options;
+  options.arguments(
+      {"--ros-args", "--params-file",
+       std::string(VOXFIELD_ROS_CFG_DIR) + "/calib/euroc_calib.yaml"});
+  auto node = std::make_shared<rclcpp::Node>("test_euroc_calib", options);
+
+  Transformation T_B_C, T_B_D;
+  ASSERT_TRUE(getTransformationParam(*node, "T_B_C", "invert_T_B_C", &T_B_C));
+  ASSERT_TRUE(getTransformationParam(*node, "T_B_D", "invert_T_B_D", &T_B_D));
+  // Translation column of the file's T_B_D.
+  EXPECT_NEAR(T_B_D.getPosition().x(), 0.06901, 1e-5);
+  EXPECT_NEAR(T_B_D.getPosition().y(), -0.02781, 1e-5);
+  EXPECT_NEAR(T_B_D.getPosition().z(), -0.12395, 1e-5);
+}
+
 }  // namespace
 }  // namespace voxfield
 

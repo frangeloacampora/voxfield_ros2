@@ -77,8 +77,6 @@ The tsdf_server and esdf_server have the following services:
 
 generate_mesh
   This service has an empty request and response. Calling this service will generate a new mesh. The mesh will be saved as a ply file unless ``mesh_filename`` is set to "". The mesh will also be output on the ``mesh_pointcloud`` topic if ``output_mesh_as_pointcloud`` is true and on the ``mesh_pcl`` topic if ``output_mesh_as_pcl_mesh`` is true.
-generate_esdf
-  This service has an empty request and response. It can be used to trigger an esdf map update.
 save_map
   This service has a ``voxfield_msgs::FilePath::Request`` and ``voxfield_msgs::FilePath::Response``. The service call saves the tsdf layer to a .vxblx file.
 load_map

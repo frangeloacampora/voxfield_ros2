@@ -92,8 +92,8 @@ Topic/service names below are relative to the node (`~` = node-private); this re
 |---|---|---|---|
 | `~/generate_mesh` | `std_srvs/srv/Empty` | all | Force a full mesh regeneration. If the `mesh_filename` param is set, also writes an ASCII PLY to that path. |
 | `~/clear_map` | `std_srvs/srv/Empty` | all | Clear the whole map. |
-| `~/save_map` / `~/load_map` | `voxfield_msgs/srv/FilePath` | all | Save/load the TSDF layer as a binary file (`voxfield_server` also saves/loads its ESDF layer in the same file — see the known-issue note below). |
-| `~/save_esdf_map` | `voxfield_msgs/srv/FilePath` | `voxfield_server`, `voxblox_server` | Save just the ESDF layer. |
+| `~/save_map` / `~/load_map` | `voxfield_msgs/srv/FilePath` | all | Save/load the TSDF layer as a binary file. `voxfield_server` and `voxblox_server` also save/load their ESDF layer in the same file (TSDF first, then ESDF). |
+| `~/save_esdf_map` | `voxfield_msgs/srv/FilePath` | `voxfield_server`, `voxblox_server` | Save just the ESDF layer, replacing the file (the format `voxblox_eval`'s `voxblox_esdf_file_path` expects). |
 | `~/save_occ_map` / `~/save_all_map` | `voxfield_msgs/srv/FilePath` | `fiesta_server`, `voxedt_server` | Save the occupancy layer / everything. |
 | `~/publish_pointclouds` | `std_srvs/srv/Empty` | all | Force-publish every pointcloud output once, bypassing the `publish_pointclouds`/`publish_slices` param gating. |
 | `~/publish_map` | `std_srvs/srv/Empty` | all | Force-publish `~/tsdf_map_out`/`~/esdf_map_out` once. |
@@ -102,7 +102,7 @@ Topic/service names below are relative to the node (`~` = node-private); this re
 
 ### On-disk map file format
 
-`~/save_map`/`~/save_esdf_map`/`~/save_occ_map`/`~/save_all_map` all write the same binary protobuf layer format (`voxfield::io::SaveLayer`) — the on-disk equivalent of a `voxfield_msgs/msg/Layer`, not a point cloud or mesh. No extension is enforced by the code; this repo's launch/eval files use `.tsdf`/`.esdf`/`.occ`/`.vxblx` by convention. These files are wire-compatible with maps saved by the original ROS 1 Voxblox/Voxfield (see `docs/ROS2_PORT_NOTES.md` for the compatibility check and a note on a pre-existing upstream bug in `voxfield_server`'s combined TSDF+ESDF save/load).
+`~/save_map`/`~/save_esdf_map`/`~/save_occ_map`/`~/save_all_map` all write the same binary protobuf layer format (`voxfield::io::SaveLayer`) — the on-disk equivalent of a `voxfield_msgs/msg/Layer`, not a point cloud or mesh. No extension is enforced by the code; this repo's launch/eval files use `.tsdf`/`.esdf`/`.occ`/`.vxblx` by convention. These files are wire-compatible with maps saved by the original ROS 1 Voxblox/Voxfield (see `docs/ROS2_PORT_NOTES.md` for the compatibility check). Note that ROS 1 Voxfield's `voxfield_server`/`voxblox_server` `~/save_map` wrote only the ESDF layer (a since-fixed upstream bug, "Known upstream issues" #11 in `docs/ROS2_PORT_NOTES.md`), so `~/load_map` rejects such ROS 1 files. They are still readable as a plain ESDF layer (e.g. by `voxblox_eval`).
 
 `~/generate_mesh` (with `mesh_filename` set) instead writes an **ASCII PLY** (`element vertex`/`element face`, `x y z normal_x normal_y normal_z red green blue alpha` per vertex) — a normal, tool-readable mesh file, unlike the protobuf map files above.
 

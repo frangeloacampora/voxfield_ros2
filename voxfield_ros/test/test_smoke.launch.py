@@ -16,9 +16,11 @@ earlier file's for the same key).
 For `method=voxfield` this checks the full set the plan calls for:
 `~/mesh` receiving a message with at least one non-empty mesh block,
 `~/tsdf_slice`/`~/esdf_slice` receiving a non-empty cloud, and a
-`~/save_map` -> `~/load_map` round trip through a temp file (the load is
-expected, and confirmed, to fail -- see the inline comment at that
-assertion for a real upstream bug this uncovered). Every other method
+`~/save_map` -> `~/load_map` round trip through a temp file, asserting the
+load actually succeeds (the server logs "Successfully loaded TSDF layer."
+and no "Failed to load map" error). This round trip failed before the
+`VoxfieldServer::saveMap()` fix (docs/ROS2_PORT_NOTES.md "Known upstream
+issues" #11). Every other method
 (`np_tsdf`, `voxblox`, `fiesta`, `voxedt`) only checks `~/mesh`, per the
 plan's "repeat quickly ... (mesh only)".
 
@@ -152,7 +154,7 @@ class TestSmoke(unittest.TestCase):
             "mesh_block received within 30s",
         )
 
-    def test_slice_and_map_roundtrip(self):
+    def test_slice_and_map_roundtrip(self, proc_output, server):
         if METHOD != "voxfield":
             self.skipTest("full mesh/slice/save/load check only runs for voxfield")
 
@@ -210,18 +212,32 @@ class TestSmoke(unittest.TestCase):
             )
             future = load_client.call_async(FilePath.Request(file_path=map_path))
             rclpy.spin_until_future_complete(self.node, future, timeout_sec=15.0)
-            # Only assert the service call completes (per D13, FilePath.srv
-            # has no success field, so this is the only outcome a client can
-            # observe). NOT asserting the load actually succeeds: it's a
-            # confirmed pre-existing upstream bug (docs/ROS2_PORT_NOTES.md,
-            # "Known upstream issues" #11) that VoxfieldServer::saveMap()
-            # has its TSDF-layer save commented out (present verbatim in the
-            # ROS 1 original), so the file this test just saved only has the
-            # ESDF layer, and loadMap() -- unmodified, still TSDF-then-ESDF
-            # -- logs an error and fails on the TSDF half. Reproduced here
-            # deliberately rather than worked around, per the plan's "don't
-            # silently fix upstream bugs" rule.
             self.assertTrue(future.done(), "load_map call did not complete")
+            # FilePath.srv has no success field (D13), so check the outcome
+            # in the server's log. NpTsdfServer::loadMap() logs
+            # "Successfully loaded TSDF layer." once the TSDF half is read,
+            # and loadMapCallback() logs "Failed to load map from '...'"
+            # if either half (TSDF or ESDF) fails. Before the fix for
+            # docs/ROS2_PORT_NOTES.md "Known upstream issues" #11,
+            # saveMap() wrote only the ESDF layer, so this load always
+            # failed on the TSDF half.
+            proc_output.assertWaitFor(
+                "Successfully loaded TSDF layer.", process=server, timeout=10
+            )
+            # The callback has returned (the response arrived), so any
+            # failure line was already written; give the output capture a
+            # moment to catch up before checking that it's absent.
+            time.sleep(1.0)
+            # Only the server logs this string, so all captured output
+            # can be searched.
+            all_output = "".join(
+                event.text.decode(errors="replace") for event in proc_output
+            )
+            self.assertNotIn(
+                "Failed to load map",
+                all_output,
+                "load_map logged a failure for the file save_map just wrote",
+            )
         finally:
             if os.path.isfile(map_path):
                 os.remove(map_path)

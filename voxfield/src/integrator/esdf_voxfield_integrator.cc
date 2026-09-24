@@ -177,6 +177,28 @@ void EsdfVoxfieldIntegrator::setLocalRange() {
   // LOG(INFO) << "range_min: " << range_min_;
   // LOG(INFO) << "range_max: " << range_max_;
 
+  // ROS2_PORT deviation (docs/BUG_voxfield_server_camera_mode_memory.md):
+  // upstream unconditionally allocated *every* ESDF block inside the
+  // axis-aligned bounding box [range_min_, range_max_] here. That box spans
+  // all voxels whose occupancy changed since the last ESDF update, so its
+  // volume -- and therefore the memory allocated -- grows with the *cube* of
+  // how far the sensor moved in one update interval, and the blocks are
+  // never freed. A fast-moving sensor, a large localization correction, or
+  // a diverging pose estimate turns this into tens of GB within seconds.
+  //
+  // The dense allocation is unnecessary: updateESDF() only ever reads or
+  // writes voxels that are `observed`, and a voxel can only become observed
+  // in updateFromTsdfBlocks(), which already allocates its ESDF block. Every
+  // block that only this loop would allocate therefore holds nothing but
+  // unobserved voxels that updateESDF() skips anyway. updateESDF() now
+  // treats a neighbor in an unallocated block exactly like an unobserved
+  // neighbor, so the ESDF result is unchanged while memory stays bounded by
+  // the number of TSDF blocks. The old loop is kept only for the opt-in
+  // `allocate_tsdf_in_range` path, which needs it to allocate TSDF blocks.
+  if (!config_.allocate_tsdf_in_range) {
+    return;
+  }
+
   // Allocate memory for the local ESDF map
   BlockIndex block_range_min, block_range_max;
   for (int i = 0; i <= 2; i++) {
@@ -218,6 +240,11 @@ void EsdfVoxfieldIntegrator::resetFixed() {
         GlobalIndex cur_voxel_idx = GlobalIndex(x, y, z);
         EsdfVoxel* cur_vox =
             esdf_layer_->getVoxelPtrByGlobalIndex(cur_voxel_idx);
+        // Blocks in the range are no longer all allocated (see
+        // setLocalRange()).
+        if (cur_vox == nullptr) {
+          continue;
+        }
         cur_vox->fixed = false;
       }
     }
@@ -345,7 +372,10 @@ void EsdfVoxfieldIntegrator::updateESDF() {
           if (voxInRange(nbr_vox_idx)) {
             EsdfVoxel* nbr_vox =
                 esdf_layer_->getVoxelPtrByGlobalIndex(nbr_vox_idx);
-            CHECK_NOTNULL(nbr_vox);
+            // Unallocated block == unobserved neighbor (see setLocalRange()).
+            if (nbr_vox == nullptr) {
+              continue;
+            }
             GlobalIndex nbr_coc_vox_idx = nbr_vox->coc_idx;
             if (nbr_vox->observed && nbr_coc_vox_idx(0) != UNDEF) {
               TsdfVoxel* nbr_coc_tsdf_vox =
@@ -459,7 +489,10 @@ void EsdfVoxfieldIntegrator::updateESDF() {
         if (voxInRange(nbr_vox_idx)) {
           EsdfVoxel* nbr_vox =
               esdf_layer_->getVoxelPtrByGlobalIndex(nbr_vox_idx);
-          CHECK_NOTNULL(nbr_vox);
+          // Unallocated block == unobserved neighbor (see setLocalRange()).
+          if (nbr_vox == nullptr) {
+            continue;
+          }
           if (nbr_vox->observed && nbr_vox->coc_idx(0) != UNDEF) {
             float temp_dist = dist(nbr_vox->coc_idx, cur_vox_idx);
             if (temp_dist < std::abs(cur_vox->raw_distance)) {
@@ -511,7 +544,10 @@ void EsdfVoxfieldIntegrator::updateESDF() {
       // check if this index is in the range and not updated yet
       if (voxInRange(nbr_vox_idx)) {
         EsdfVoxel* nbr_vox = esdf_layer_->getVoxelPtrByGlobalIndex(nbr_vox_idx);
-        CHECK_NOTNULL(nbr_vox);
+        // Unallocated block == unobserved neighbor (see setLocalRange()).
+        if (nbr_vox == nullptr) {
+          continue;
+        }
         if (nbr_vox->observed && std::abs(nbr_vox->raw_distance) > 0.0) {
           float temp_dist = dist(cur_vox->coc_idx, nbr_vox_idx);
           if (temp_dist < std::abs(nbr_vox->raw_distance)) {

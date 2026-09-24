@@ -142,9 +142,9 @@ void VoxfieldServer::updateEsdfEvent() {
 void VoxfieldServer::saveEsdfMapCallback(
     const std::shared_ptr<voxfield_msgs::srv::FilePath::Request> request,
     std::shared_ptr<voxfield_msgs::srv::FilePath::Response> /*response*/) {
-  if (!saveMap(request->file_path)) {
+  if (!saveEsdfMap(request->file_path)) {
     RCLCPP_ERROR(
-        node_->get_logger(), "Failed to save map to '%s'",
+        node_->get_logger(), "Failed to save ESDF map to '%s'",
         request->file_path.c_str());
   }
 }
@@ -198,12 +198,24 @@ void VoxfieldServer::publishMap(bool reset_remote_map) {
 }
 
 bool VoxfieldServer::saveMap(const std::string& file_path) {
-  // Output TSDF map first, then ESDF.
-  // const bool success = NpTsdfServer::saveMap(file_path);
-  bool success = true;
+  // Output TSDF map first (this truncates/creates the file), then append
+  // the ESDF layer, so loadMap() can read them back in the same order.
+  // ROS2_PORT deviation (docs/ROS2_PORT_NOTES.md "Known upstream issues"
+  // #11): upstream had the TSDF save commented out, so ~/save_map wrote an
+  // ESDF-only file that ~/load_map could never read back. The ESDF-only
+  // behavior upstream relied on for ~/save_esdf_map now lives in
+  // saveEsdfMap().
+  const bool success = NpTsdfServer::saveMap(file_path);
   constexpr bool kClearFile = false;
   return success &&
          io::SaveLayer(esdf_map_->getEsdfLayer(), file_path, kClearFile);
+}
+
+bool VoxfieldServer::saveEsdfMap(const std::string& file_path) {
+  // ESDF layer only, in a fresh file (this is what voxblox_eval's
+  // io::LoadLayer<EsdfVoxel>() expects: the ESDF layer first in the file).
+  constexpr bool kClearFile = true;
+  return io::SaveLayer(esdf_map_->getEsdfLayer(), file_path, kClearFile);
 }
 
 bool VoxfieldServer::loadMap(const std::string& file_path) {

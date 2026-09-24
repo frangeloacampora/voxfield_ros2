@@ -892,24 +892,47 @@ float NpTsdfServer::projectPointToImageLiDAR(
   return depth;
 }
 
-bool NpTsdfServer::projectPointToImageCamera(
+// ROS2_PORT deviation (docs/ROS2_PORT_NOTES.md "Known upstream issues" #2):
+// upstream returned `bool` (in bounds or not) into the caller's `float
+// depth`, so every in-image camera point got depth 1.0 and
+// projectPointCloudToImage() kept the *first* point per pixel instead of the
+// nearest one, and computeNormalImage()'s depth-discontinuity check never
+// fired. This now returns the real range, like projectPointToImageLiDAR(),
+// and -1 (always rejected by the caller's `depth > min_d`) for points that
+// don't project into the image. Points behind the camera (z <= 0) and
+// non-finite points are rejected too: upstream projected them through the
+// pinhole model anyway (mirrored into the image, or an undefined
+// float -> int conversion).
+float NpTsdfServer::projectPointToImageCamera(
     const Point& p_C, int* u, int* v) const {
   CHECK_NOTNULL(u);
-  *u = std::round(p_C.x() * fx_ / p_C.z() + vx_);
-  if (*u >= width_ || *u < 0) {
-    return false;
-  }
   CHECK_NOTNULL(v);
-  *v = std::round(p_C.y() * fy_ / p_C.z() + vy_);
-  if (*v >= height_ || *v < 0) {
-    return false;
+  if (!(p_C.z() > 0.0f)) {  // also catches NaN
+    return -1.0f;
   }
-  return true;
+  const float proj_u = p_C.x() * fx_ / p_C.z() + vx_;
+  const float proj_v = p_C.y() * fy_ / p_C.z() + vy_;
+  // std::round() rounds halfway cases away from zero, so round(-0.5) == -1,
+  // not 0: the lower bound below must be an open one (unlike every other
+  // integer boundary, which rounds towards +infinity on a tie). Checked on
+  // the float before converting so out-of-range or non-finite values never
+  // reach the float -> int conversion.
+  if (!(proj_u > -0.5f && proj_u < width_ - 0.5f) ||
+      !(proj_v > -0.5f && proj_v < height_ - 0.5f)) {
+    return -1.0f;
+  }
+  *u = static_cast<int>(std::round(proj_u));
+  *v = static_cast<int>(std::round(proj_v));
+  return p_C.norm();
 }
 
 cv::Mat NpTsdfServer::computeNormalImage(
     const cv::Mat& vertex_map, const cv::Mat& depth_image) const {
   cv::Mat normal_image(depth_image.size(), CV_32FC3, 0.0);
+  // Every normal needs a neighboring column and row.
+  if (width_ < 2 || height_ < 2) {
+    return normal_image;
+  }
   for (int u = 0; u < width_; u++) {
     for (int v = 0; v < height_; v++) {
       Point p;
@@ -921,12 +944,21 @@ cv::Mat NpTsdfServer::computeNormalImage(
       float sign = 1.0;
 
       if (d_p > 0) {
-        // neighbor x (in ring)
+        // neighbor x: the next column. A LiDAR range image is a 360-degree
+        // ring, so its last column wraps to column 0. A camera image does
+        // not wrap: use the previous column and flip the normal's sign
+        // instead (ROS2_PORT deviation, see the row case below).
         int n_x_u;
-        if (u == width_ - 1)
-          n_x_u = 0;
-        else
+        if (u == width_ - 1) {
+          if (sensor_is_lidar_) {
+            n_x_u = 0;
+          } else {
+            n_x_u = u - 1;
+            sign *= -1.0;
+          }
+        } else {
           n_x_u = u + 1;
+        }
         Point n_x;
         n_x << vertex_map.at<cv::Vec3f>(v, n_x_u)[0],
             vertex_map.at<cv::Vec3f>(v, n_x_u)[1],
@@ -938,15 +970,14 @@ cv::Mat NpTsdfServer::computeNormalImage(
         if (std::abs(d_n_x - d_p) > smooth_thre_ratio_ * d_p)
           continue;
 
-        // neighbor y
-        // NOTE(ROS2_PORT_PLAN.md §8.14, known upstream issue, kept as-is):
-        // `v == height_` can never be true inside `for (v = 0; v <
-        // height_; ...)`, so the "wrap the last row" branch below is dead
-        // code and v = height_ - 1 reads one row out of bounds via
-        // n_y_v = v + 1 == height_. The intended condition was probably
-        // `v == height_ - 1`.
+        // neighbor y: the next row; the last row uses the previous row and
+        // flips the normal's sign (dy then points the other way).
+        // ROS2_PORT deviation (docs/ROS2_PORT_NOTES.md "Known upstream
+        // issues" #1): upstream tested `v == height_`, which can never be
+        // true inside `for (v = 0; v < height_; ...)`, so the last row read
+        // one row past the end of vertex_map/depth_image.
         int n_y_v;
-        if (v == height_) {
+        if (v == height_ - 1) {
           n_y_v = v - 1;
           sign *= -1.0;
         } else {

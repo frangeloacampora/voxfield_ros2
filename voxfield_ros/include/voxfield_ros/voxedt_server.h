@@ -130,7 +130,6 @@ class VoxedtServer : public TsdfServer {
   rclcpp::Subscription<voxfield_msgs::msg::Layer>::SharedPtr esdf_map_sub_;
 
   /// Services.
-  rclcpp::Service<std_srvs::srv::Empty>::SharedPtr generate_esdf_srv_;
   rclcpp::Service<voxfield_msgs::srv::FilePath>::SharedPtr save_esdf_map_srv_;
   rclcpp::Service<voxfield_msgs::srv::FilePath>::SharedPtr save_occ_map_srv_;
   rclcpp::Service<voxfield_msgs::srv::FilePath>::SharedPtr save_all_map_srv_;

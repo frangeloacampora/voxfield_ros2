@@ -26,14 +26,6 @@ class VoxbloxServer : public TsdfServer {
       const MeshIntegratorConfig& mesh_config);
   virtual ~VoxbloxServer() {}
 
-  // NOTE(ROS2 port): defined but never bound to a service in setupRos()
-  // upstream either -- generate_esdf_srv_ is declared but unused. Kept as a
-  // reachable-by-C++-callers-only method per the port's behavior-
-  // preservation rule.
-  void generateEsdfCallback(
-      const std::shared_ptr<std_srvs::srv::Empty::Request> request,
-      std::shared_ptr<std_srvs::srv::Empty::Response> response);
-
   void publishAllUpdatedEsdfVoxels();
   virtual void publishSlices();
   void publishTraversable();
@@ -42,6 +34,8 @@ class VoxbloxServer : public TsdfServer {
   virtual void newPoseCallback(const Transformation& T_G_C);
   virtual void publishMap(bool reset_remote_map = false);
   virtual bool saveMap(const std::string& file_path);
+  /// Saves only the ESDF layer (to a fresh file); used by ~/save_esdf_map.
+  bool saveEsdfMap(const std::string& file_path);
   virtual bool loadMap(const std::string& file_path);
 
   void updateEsdfEvent();
@@ -117,7 +111,6 @@ class VoxbloxServer : public TsdfServer {
   rclcpp::Subscription<voxfield_msgs::msg::Layer>::SharedPtr esdf_map_sub_;
 
   /// Services.
-  rclcpp::Service<std_srvs::srv::Empty>::SharedPtr generate_esdf_srv_;
   rclcpp::Service<voxfield_msgs::srv::FilePath>::SharedPtr save_esdf_map_srv_;
 
   /// Timers.

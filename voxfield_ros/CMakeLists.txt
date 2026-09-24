@@ -150,10 +150,30 @@ if(BUILD_TESTING)
   ament_add_gtest(test_param_utils test/test_param_utils.cc
     SKIP_LINKING_MAIN_LIBRARIES)
   target_link_libraries(test_param_utils ${PROJECT_NAME} gtest)
+  target_compile_definitions(test_param_utils PRIVATE
+    VOXFIELD_ROS_CFG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/cfg")
 
   ament_add_gtest(test_kindr_conversions test/test_kindr_conversions.cc
     SKIP_LINKING_MAIN_LIBRARIES)
   target_link_libraries(test_kindr_conversions ${PROJECT_NAME} gtest)
+
+  # NpTsdfServer range-image preprocessing regressions ("Known upstream
+  # issues" #1-#3 in docs/ROS2_PORT_NOTES.md).
+  ament_add_gtest(test_np_tsdf_server test/test_np_tsdf_server.cc
+    SKIP_LINKING_MAIN_LIBRARIES)
+  target_link_libraries(test_np_tsdf_server ${PROJECT_NAME} gtest)
+
+  # save_map/load_map/save_esdf_map file handling ("Known upstream issues"
+  # #11).
+  foreach(_map_io_server IN ITEMS voxfield voxblox)
+    ament_add_gtest(test_${_map_io_server}_server_map_io
+      test/test_server_map_io.cc
+      SKIP_LINKING_MAIN_LIBRARIES)
+    target_link_libraries(test_${_map_io_server}_server_map_io
+      ${PROJECT_NAME} gtest)
+  endforeach()
+  target_compile_definitions(test_voxblox_server_map_io PRIVATE
+    TEST_VOXBLOX_SERVER)
 
   # Dataset-free smoke test (plan §6 Phase 12 step 1): one launch_test per
   # server executable, sharing test/test_smoke.launch.py via the `method`

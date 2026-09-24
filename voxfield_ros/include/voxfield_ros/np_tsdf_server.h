@@ -154,7 +154,11 @@ class NpTsdfServer {
       float min_z,           // NOLINT
       float min_d) const;    // NOLINT
   float projectPointToImageLiDAR(const Point& p_C, int* u, int* v) const;
-  bool projectPointToImageCamera(const Point& p_C, int* u, int* v) const;
+  // Returns the point's range (Euclidean distance from the sensor origin,
+  // same convention as projectPointToImageLiDAR()) if it projects inside the
+  // image, or -1 if it does not (behind the camera, non-finite, or outside
+  // the image bounds).
+  float projectPointToImageCamera(const Point& p_C, int* u, int* v) const;
   cv::Mat computeNormalImage(
       const cv::Mat& vertex_map, const cv::Mat& depth_image) const;
   // from range image to point cloud
@@ -350,11 +354,14 @@ class NpTsdfServer {
   float smooth_thre_ratio_ = 1.0f;
   bool sensor_is_lidar_ = false;
 
-  // Camera
-  int vx_ = 0;
-  int vy_;
-  int fx_ = 0;
-  int fy_;
+  // Camera intrinsics (pixels). ROS2_PORT deviation (docs/ROS2_PORT_NOTES.md
+  // "Known upstream issues" #3): upstream declared these `int`, truncating
+  // non-integer calibrations (e.g. fx = 451.51 -> 451); vy_/fy_ also had no
+  // initializer.
+  float vx_ = 0.0f;
+  float vy_ = 0.0f;
+  float fx_ = 0.0f;
+  float fy_ = 0.0f;
 
   // LiDAR
   float fov_up_;

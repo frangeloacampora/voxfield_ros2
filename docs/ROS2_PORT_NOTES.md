@@ -428,6 +428,7 @@ natural initializer-list ordering that used to fall out of the ROS 1
 - `NpTsdfServer::computeNormalImage()`'s dead `if (v == height_)` branch
   (already documented in the plan's §8.14 as a known upstream issue) is
   left exactly as-is, with a code comment pointing back to the plan.
+  *(Later fixed; see "Known upstream issues" #1 below.)*
 - Per the plan's explicit instruction, `width_`, `height_`, `vx_`, `fx_`
   are now initialized to `0` in the header, and
   `getServerConfigFromRosParam()` logs `RCLCPP_ERROR` if `width_ <= 0 ||
@@ -524,7 +525,8 @@ class -- both are unreachable via ROS, only callable from C++ code that
 holds the object directly. Ported with the same shape (ROS 2 service
 callback signature, still unbound) rather than either wiring them up (a
 behavior change) or deleting them (also a behavior/API change for anyone
-using these classes as a library).
+using these classes as a library). *(Later deleted at the user's request;
+see "Known upstream issues" #6 below.)*
 
 **Acceptance (plan §6 Phase 7):** all 10 executables build with 0 errors,
 confirmed via a full clean rebuild (`rm -rf build install log`) in both
@@ -701,6 +703,7 @@ parameter under this name in the ROS 1 version either (`rosparam load`
 would have set the same bogus key). Not fixed, per the plan's "don't fix
 upstream bugs silently" rule (§0.5) — and moot in practice, since
 `euroc_calib.yaml` isn't loaded by any in-scope (non-`bak/`) launch file.
+*(Later fixed; see "Known upstream issues" #7 below.)*
 
 ### Verification (plan §6 Phase 9 accept criteria)
 - `voxfield_server --ros-args --params-file cfg/param/kitti_param.yaml
@@ -961,26 +964,110 @@ plan §3.4 exactly; node-name prefix is `/voxfield_node` per D1 (was
 
 ### Known upstream issues (consolidated)
 
-Everything below is pre-existing ROS 1 Voxfield/Voxblox behavior, carried
-over unfixed per the plan's "document, don't silently fix" rule (§0 item
-6). Algorithmic ones are already named in plan §8.14; the rest were found
-during the port and logged in their own phase's section above (linked
-here for a single point of reference):
+Everything below is pre-existing ROS 1 Voxfield/Voxblox behavior. It was
+first carried over unfixed, per the plan's "document, don't silently fix"
+rule (§0 item 6). Algorithmic ones are already named in plan §8.14; the rest
+were found during the port and logged in their own phase's section above
+(linked here for a single point of reference).
 
-1. `NpTsdfServer::computeNormalImage()`: `if (v == height_)` can never be
-   true inside `for (v = 0; v < height_; ...)`, so row `height_ - 1`'s
-   normals read one row out of bounds of `vertex_map`/`depth_image`. Very
-   likely meant `v == height_ - 1`. (Plan §8.14; Phase 6 notes above.)
-2. `NpTsdfServer::projectPointToImageCamera()` returns `bool` but its
-   result is assigned to a `float depth`, so `depth` for camera (non-
-   LIDAR) sensors is always `0.0` or `1.0` -- the `depth > min_d` filter
-   passes every in-image point, and "keep nearest point per pixel"
-   instead keeps the *first* point. Affects RGB-D datasets (Cow & Lady,
-   Vicon) through `voxfield_server`/`np_tsdf_server` specifically (LIDAR
-   datasets take a different code path). (Plan §8.14; not yet exercised
-   against real RGB-D data in this port -- flagged again under Phase 12.)
-3. Camera intrinsics `fx_`/`fy_`/`vx_`/`vy_` are `int`, truncating
-   non-integer calibrations. (Plan §8.14.)
+After the port was complete, the user asked for #12 to be fixed, and then
+for every other item that was still open to be fixed if it was a real bug
+or deleted if it was dead code. Each item says **FIXED**, **REMOVED**, or
+(for #4, #5, #8-#10) how it was already handled during the port. Each fix
+was checked against the ROS 1 original (`git show main:voxblox_ros/...`)
+to confirm the behavior was the same upstream, and has regression tests
+that fail on the old code. Numbering is kept stable.
+
+1. **FIXED.** `NpTsdfServer::computeNormalImage()`: `if (v == height_)`
+   can never be true inside `for (v = 0; v < height_; ...)`, so row
+   `height_ - 1`'s normals read one row out of bounds of
+   `vertex_map`/`depth_image`. That is undefined behavior: in practice the
+   last row got garbage or zero normals. (Plan §8.14; Phase 6 notes
+   above.)
+
+   The branch body (`n_y_v = v - 1; sign *= -1.0;`) shows what was
+   intended. The last row should use the previous row as its y-neighbor
+   and flip the normal's sign, because `dy` then points the other way. So
+   the fix gives that row a real normal, not an empty one. The condition
+   is now `v == height_ - 1`.
+
+   Fixing it exposed the same boundary bug on the other axis, fixed
+   alongside it. The last *column* always wrapped to column 0. That is
+   right for a 360-degree LiDAR range image but wrong for a camera, where
+   column 0 is the far edge of the image. The wrapped normal had the
+   wrong sign, or was lost at the smoothness check. Camera mode now uses
+   the previous column with the same sign flip, and LiDAR mode still
+   wraps. A 1-pixel-wide or 1-pixel-tall image now returns all-zero
+   normals instead of reading out of bounds.
+
+   Tests in `voxfield_ros/test/test_np_tsdf_server.cc`:
+   - `PlaneNormalsIncludingLastRowAndColumn`: a fronto-parallel plane
+     must get a `+z` normal at every pixel, including the last row and
+     column. Against the old code, 12 of the 13 last-row/last-column
+     pixels fail.
+2. **FIXED.** `NpTsdfServer::projectPointToImageCamera()` returned `bool`
+   (in the image or not), but its result was assigned to a `float depth`.
+   So `depth` for camera (non-LIDAR) sensors was always `0.0` or `1.0`:
+   - the `depth > min_d` filter passed every in-image point;
+   - "keep nearest point per pixel" kept the *first* point instead;
+   - `computeNormalImage()`'s depth-discontinuity check
+     (`|d_n - d_p| > smooth_thre_ratio * d_p`) never fired, so normals
+     were computed across depth edges.
+
+   This affected RGB-D datasets (Cow & Lady, Vicon) through
+   `voxfield_server`/`np_tsdf_server` (Plan §8.14).
+
+   The function now returns `float`: the point's range (Euclidean norm,
+   the same convention as its sibling `projectPointToImageLiDAR()`), or
+   `-1` if the point doesn't project into the image, which the caller's
+   `depth > min_d` always rejects. Points behind the camera (`z <= 0`),
+   on the image plane, and non-finite points are also rejected. Upstream
+   pushed them through the pinhole model anyway: into the mirrored pixel,
+   or through an undefined float-to-int conversion. The in-bounds check
+   now runs on the float before rounding, for the same reason.
+
+   Nothing downstream relied on the depths being 0/1.
+   `extractPointCloud()`, `extractNormals()` and `extractColors()` use
+   `depth_image > 0` only as a touched/untouched mask; the 3D point comes
+   from `vertex_map`. `computeNormalImage()` now gets the real depths its
+   smoothness check was written for.
+
+   Behavior change on camera data:
+   - `min_dist` now takes effect (default 0.1 m range).
+   - Normals are no longer computed across depth edges, using the
+     default `smooth_thre_ratio: 1.0` or a stricter configured value.
+
+   Tests in `test_np_tsdf_server.cc`:
+   - `ProjectionReturnsRangeAndRejectsInvalidPoints`
+   - `NearestPointPerPixelWins`: two points on the same ray, in both
+     orders; the nearer one must win in `depth_image`, `vertex_map` and
+     the extracted cloud.
+   - `PointsBehindCameraAreDropped`
+   - `NoNormalAcrossDepthDiscontinuity`
+
+   All four fail against the old code.
+3. **FIXED.** Camera intrinsics `fx_`/`fy_`/`vx_`/`vy_` were `int`,
+   truncating non-integer calibrations (Plan §8.14). A real camera's
+   `fx = 451.51` became 451, and a half-pixel principal point such as
+   `vx = 3.5` was rejected outright by the D6 param helper ("expected an
+   integer"), falling back to 0. `vy_`/`fy_` also had no initializer
+   (the same missing-param undefined behavior as #4).
+
+   All four are now `float = 0.0f` (`np_tsdf_server.h`). `float` matches
+   the projection math, which is all in `Point`'s `float`. They are
+   declared and used only in `NpTsdfServer`: no subclass shadows them,
+   and nothing else reads them. The `param()` calls needed no change.
+   YAML integers (the shipped `cow_calib.yaml`/`vicon_calib.yaml` write
+   `fx: 580`) still coerce through D6's integer-to-float path.
+
+   Tests in `test_np_tsdf_server.cc`:
+   - `NonIntegerIntrinsicsAreNotTruncated`: `fx = 200.6`, `vx = 100.6`
+     must project `(1, 1, 1)` to column 301, not the truncated 300. The
+     same check covers `v`.
+   - `IntegerIntrinsicsStillAccepted`: integer-typed parameters still
+     work.
+
+   `NonIntegerIntrinsicsAreNotTruncated` fails against the old code.
 4. `width_`/`height_`/`vx_`/`fx_` were read via
    `nh_private.param("x", member_, member_)` with no prior initializer --
    an indeterminate-value (UB) read if the ROS param is absent. Now
@@ -993,17 +1080,40 @@ here for a single point of reference):
    prior initializer" UB as #4, just not called out in the plan. Same
    fix applied (explicit `= false` in-class initializer); observed
    effective default (`false`) unchanged. (Phase 6 notes above.)
-6. `VoxfieldServer::generateEsdfCallback()` /
-   `VoxbloxServer::generateEsdfCallback()` are declared (and, for
+6. **REMOVED.** `VoxfieldServer::generateEsdfCallback()` /
+   `VoxbloxServer::generateEsdfCallback()` were declared (and, for
    `VoxbloxServer`, defined) with a `generate_esdf_srv_` member, but
-   neither is ever bound to an actual ROS service in `setupRos()` --
-   dead/unreachable via ROS in both the ROS 1 original and here. (Phase
-   7 notes above.)
-7. `cfg/calib/euroc_calib.yaml` has a `T_B_D::` (double colon) typo,
-   parsed by both ROS 1's `rosparam` and PyYAML as a literal key
-   `"T_B_D:"`, so `T_B_D` was never actually readable under that name in
-   ROS 1 either. Not used by any in-scope (non-`bak/`) launch file.
+   neither was ever bound to a ROS service in `setupRos()`. They were
+   unreachable via ROS in both the ROS 1 original and here. In ROS 1,
+   `VoxfieldServer`'s definition is commented out, so it was only a
+   dangling declaration there. (Phase 7 notes above.)
+
+   Deleted:
+   - both declarations and their port comments (`voxfield_server.h`,
+     `voxblox_server.h`);
+   - `VoxbloxServer`'s definition (`voxblox_server.cc`);
+   - the unused `generate_esdf_srv_` member from all four headers that
+     carried it: `voxfield_server.h`, `voxblox_server.h`, and also
+     `fiesta_server.h` and `voxedt_server.h`, which declared it too but
+     never had a callback.
+
+   The `std_srvs/srv/empty.hpp` include stays, since the base classes'
+   `~/generate_mesh`/`~/clear_map`/etc. services still use it. The
+   upstream Voxblox doc page `docs/pages/The-Voxblox-Node.rst` listed a
+   `generate_esdf` service that no server in this repo has ever offered;
+   that entry is removed too. A repo-wide grep finds no remaining
+   references, and the full workspace rebuilds with 0 errors.
+7. **FIXED.** `cfg/calib/euroc_calib.yaml` had a `T_B_D::` (double colon)
+   typo. Both ROS 1's `rosparam` and PyYAML parse it as a literal key
+   `"T_B_D:"`, so `T_B_D` was never readable under that name in ROS 1
+   either. It is not used by any in-scope (non-`bak/`) launch file.
    (Phase 9 notes above.)
+
+   The key is now `T_B_D`, edited in place in the already-converted ROS 2
+   file. The values are untouched, and they form a valid rigid transform.
+   New test `ParamUtils.EurocCalibTransformsLoadFromYaml` in
+   `test_param_utils.cc` loads the real file via `--params-file` and
+   reads both `T_B_C` and `T_B_D` through `getTransformationParam()`.
 8. `launch/eval/eval_cow.launch` and `eval_euroc.launch` each loaded a
    `cfg/{cow,euroc}_dataset.yaml` that has never existed in this
    repository -- already non-functional in ROS 1. The dead reference is
@@ -1037,6 +1147,75 @@ here for a single point of reference):
     load map from ...`) on the TSDF half every time. Found while writing
     the Phase 12 smoke test (below); reproduced deliberately in that
     test's `~/save_map` -> `~/load_map` check rather than worked around.
+
+    **FIXED**, for `VoxbloxServer::saveMap()` too, which had exactly the
+    same commented-out `TsdfServer::saveMap()`.
+
+    Why upstream commented it out: `~/save_esdf_map`'s callback also
+    called `saveMap()`, and `voxblox_eval` reads that file with
+    single-layer `io::LoadLayer<EsdfVoxel>()`, which needs the ESDF layer
+    first in the file. Simply uncommenting the TSDF save would have broken
+    `~/save_esdf_map` for evaluation. So the two jobs are now separate:
+    - `saveMap()` (`~/save_map`) calls the base `saveMap()`, which writes
+      the TSDF layer with `SaveLayer`'s default `clear_file = true`
+      (truncate/create), then appends the ESDF layer (`kClearFile =
+      false`). That is the order `loadMap()` reads back, and the order
+      `FiestaServer`'s combined saves already use.
+    - A new `saveEsdfMap()` (`~/save_esdf_map`) writes only the ESDF
+      layer, now with `kClearFile = true`. Upstream appended here, so
+      re-saving to an existing path left the old content first in the
+      file, which is where the single-layer reader looks.
+
+    Tests:
+    - `test_{voxfield,voxblox}_server_map_io` (new,
+      `voxfield_ros/test/test_server_map_io.cc`, built once per server):
+      a save/load round trip must restore both layers, and an ESDF-only
+      save over an existing combined file must leave an ESDF-first file
+      that `io::LoadLayer<EsdfVoxel>` reads.
+    - `test_smoke.launch.py`'s voxfield round trip: previously it
+      asserted only that `~/load_map` *completed*. It now asserts the
+      load *succeeds*: the server logs "Successfully loaded TSDF layer."
+      and no "Failed to load map".
+    - `README.md`'s services and on-disk format sections are updated to
+      match.
+
+    Note for ROS 1 users: a `~/save_map` file written by ROS 1 Voxfield
+    contains only the ESDF layer, so `~/load_map` still rejects it,
+    correctly. It can still be read as a plain ESDF layer.
+
+    Not fixed (cosmetic): `Layer::isCompatible()`'s warning prints the two
+    layer types swapped ("loaded map is: esdf but the current map is:
+    tsdf"). It is logged, as expected, when the multi-layer loader skips
+    the other layer in a combined file.
+12. **FIXED as a deliberate deviation from the "document, don't fix"
+    rule** (the user authorized it because of how severe it is):
+    `EsdfVoxfieldIntegrator::setLocalRange()` (`voxfield/src/integrator/
+    esdf_voxfield_integrator.cc`) allocated *every* ESDF block in the
+    axis-aligned bounding box of all voxels whose occupancy changed since
+    the last ESDF update, plus `local_range_offset_{x,y,z}`, and never
+    freed them. The memory it allocated grows with the **cube** of how far
+    the updated regions are from each other, so a fast-moving sensor, a
+    large localization correction, or a diverging pose estimate allocates
+    tens of GB within seconds. This caused the `voxfield_server` OOM
+    incidents during real-robot validation (the maze bag's own
+    `map -> sensor_init` TF diverges to kilometres between ~24 s and
+    ~55 s). Code is identical in the ROS 1 original (the core library is
+    unchanged from upstream `78ee640` apart from include order), so this
+    is **not** a port regression. Fix: the dense allocation is skipped
+    (unless the opt-in, default-off `allocate_tsdf_in_range` is set, which
+    needs it), and `updateESDF()` treats a neighbor in an unallocated block
+    as an unobserved neighbor. It only ever reads or writes `observed`
+    voxels, and every observed voxel's block is already allocated by
+    `updateFromTsdfBlocks()`, so the ESDF result does not change. Checked
+    bit-for-bit against the upstream code on synthetic RGB-D-like
+    sequences: 7 scenarios, from 75k to 1.27M observed voxels, voxel sizes
+    0.05/0.1/0.15 m, with and without pose jumps or drift. Every observed
+    voxel's `distance`/`raw_distance`/`coc_idx`/`behind`/`fixed` matched.
+    ESDF blocks dropped 2.4-8.4x (the ESDF block count now equals the TSDF
+    block count). New regression test: `voxfield/test/
+    test_esdf_voxfield_integrator.cc`. Live on the maze bag: RSS peaked at
+    139 MB instead of 20-25 GB. Details:
+    `docs/BUG_voxfield_server_camera_mode_memory.md`.
 
 ### `rcl_yaml_param_parser` gotcha found while writing the smoke test
 Multiple `--params-file` arguments for the same node merge with later
