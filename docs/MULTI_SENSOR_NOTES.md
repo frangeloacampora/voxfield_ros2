@@ -247,3 +247,96 @@ existing smoke launch tests still pass. `Summary: 124 tests, 0 errors, 0
 failures, 4 skipped` (119 + 4 new `test_transformer_multi` cases + 1 new
 CTest aggregate entry). `git status` after this phase touches only
 `voxfield_ros` C++/CMake/test files.
+
+## Phase 4: Sensor config loading and validation (M2, M13)
+
+**`sensor_input.h`** (new): `SensorConfig` and the `SensorInput<IntegratorBaseT>`
+template, exactly as M4 specifies. No ROS-topic wiring yet (`sub`/`integrator`/
+`projector` stay unpopulated) — those are Phase 5/6's job; this phase only
+adds the struct shapes and the config-building logic that fills
+`SensorConfig`.
+
+**`sensor_config_loader.{h,cc}`** (new): `LoadedSensor` (a `SensorConfig`
+plus both integrator `Config`s, a `RangeImageProjector::Config`, and
+`method` — always all four, regardless of caller; a `TsdfServer` caller
+just never reads `np_tsdf`/`projector`) and `loadSensors()`.
+
+- **Legacy mode** (`sensor_names` not present — checked the same way
+  `getTransformationParam` checks presence, `has_parameter() ||
+  overrides.count() > 0`, *not* by declaring the param with an empty-vector
+  default: an empty-vector default is itself a real `PARAMETER_STRING_ARRAY`
+  value, not `PARAMETER_NOT_SET`, so it can't distinguish "unset" from "set
+  to `[]`" — matches M1's requirement): returns exactly the caller-supplied
+  `legacy_input` and base configs, unmodified, reading **no** `sensors.*`
+  key at all. A stray `sensors.*` override while `sensor_names` is unset
+  logs `RCLCPP_WARN` and is otherwise ignored.
+- **Multi-sensor mode:** each sensor's `SensorConfig` starts as a **copy of
+  `legacy_input`** (giving it inherited `queue_size`/`input_qos_best_effort`/
+  `min_time_between_msgs_sec` for free, since those are exactly the
+  top-level-resolved values `legacy_input` already carries), then
+  `name`/`topic`/`freespace_topic`/`frame`/`has_T_B_C` are reset — `frame`
+  deliberately does **not** inherit `legacy_input.frame` (which would be
+  the legacy `sensor_frame` value), since that would force every sensor
+  into one frame, defeating the point (M2). Integrator/projector configs
+  copy from `tsdf_base`/`np_base`/`projector_base` (or default-construct if
+  null) the same way.
+- **Whitelist** (§7.1) is a fixed set of ~30 key names split into four
+  categories in the `.cc`'s anonymous namespace: `SensorConfig` fields,
+  integrator fields shared by both `TsdfIntegratorBase::Config` and
+  `NpTsdfIntegratorBase::Config` (same name/type/units in both, verified by
+  reading `voxfield/integrator/{tsdf,np_tsdf}_integrator.h`'s `Config`
+  structs directly — they're independent structs, not a shared base class,
+  but every §7.1 "both" key matches field-for-field), NP-integrator-only
+  fields, and `RangeImageProjector::Config`-only fields. `anti_grazing` is
+  the one key/field-name mismatch (`enable_anti_grazing`), matching
+  `ros_params.h`'s own read. Each present override is read into **both**
+  `sensor.tsdf` and `sensor.np_tsdf` for the shared category (harmless for
+  whichever struct the calling server ignores) — this also means the
+  whitelist/forbidden-key check doesn't need to know which server is
+  calling; only the NP-only categories and the `RangeImageProjector::isValid()`
+  check are gated on `np_base != nullptr` (a `TsdfServer` multi-sensor
+  config never sets `width`/`height`, so it must not be validated as if it
+  were an NP camera/LiDAR model).
+- Only keys **actually present** under `sensors.<name>.` are read
+  (`hasOverride()` checks the raw override map before calling `param()`),
+  per Phase 4 step 2 — avoids declaring the full ~30-key set per sensor.
+- **M13 validation**, collecting every problem before throwing (not
+  stopping at the first): sensor name syntax/uniqueness; every
+  `sensors.*` override key scanned via `listParameterOverrides(node,
+  "sensors.")` and classified as unknown-sensor / forbidden (exact-name set
+  plus an `esdf_`/`occ_`/`mesh_`/`publish_`/`update_` prefix check,
+  covering the "every `esdf_*`/... key" part of §7.2 without enumerating
+  each one) / unknown-key / valid; missing or duplicate `topic`; and, for
+  NP servers only, `RangeImageProjector::Config::isValid()` per sensor. A
+  non-empty error list is joined (`"N problem(s): \n  - ...\n  - ..."`)
+  into one `std::invalid_argument`. `use_tf_transforms` (map-global) is
+  read once to gate the M13.6 duplicate-`T_B_C` check (queue mode only):
+  warns if 2+ sensors have no per-sensor `T_B_C` override (all silently
+  inheriting the same global one — Transformer's `lookupSensorTransform()`
+  fallback, from Phase 3), and separately if any two *explicit* overrides
+  are numerically identical.
+- On success, logs one `RCLCPP_INFO` line per sensor (name, topic,
+  resolved frame or `<header>`, effective ray-length range; NP servers also
+  log the projection model).
+
+**`test/test_sensor_config.cc`** (new, 12 cases): legacy passthrough
+(including a field-by-field check against a freshly-read top-level config,
+to catch a loader that forgets to copy a field rather than just testing
+compiler-generated copy semantics) and the stray-override warning;
+multi-sensor inheritance (`max_ray_length_m: 45` top-level, sensor B
+overriding to `5` → A stays 45, B is 5) and the frame-non-inheritance case;
+one test per M13 error case named in the plan (unknown key, unknown
+sensor, forbidden key, missing topic, duplicate topic, duplicate name,
+invalid NP projector config) plus a combined "several errors → message
+lists both" case.
+
+**Accept:** all tests pass; `test_legacy_golden` exact. `Summary: 137
+tests, 0 errors, 0 failures, 4 skipped` (124 + 12 new `test_sensor_config`
+cases + 1 new CTest aggregate entry). One transient flake was observed
+(`test_transformer_multi` failed to produce a result file when run under
+the full `colcon test` alongside `voxfield`'s ~35s build; re-running it
+standalone and via `--ctest-args -R test_transformer_multi` both passed
+immediately, and a full re-run of the whole suite came back clean at 137/0/0/4
+— treated as ctest-level resource contention under load, not a code
+regression, since nothing in this phase touches `Transformer`. `git status`
+after this phase touches only new `voxfield_ros` files plus `CMakeLists.txt`.

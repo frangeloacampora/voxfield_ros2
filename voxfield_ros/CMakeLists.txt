@@ -68,6 +68,7 @@ add_library(${PROJECT_NAME}
   src/interactive_slider.cc
   src/transformer.cc
   src/range_image_projector.cc
+  src/sensor_config_loader.cc
   src/tsdf_server.cc
   src/np_tsdf_server.cc
   src/voxfield_server.cc
@@ -162,6 +163,12 @@ if(BUILD_TESTING)
   ament_add_gtest(test_transformer_multi test/test_transformer_multi.cc
     SKIP_LINKING_MAIN_LIBRARIES)
   target_link_libraries(test_transformer_multi ${PROJECT_NAME} gtest)
+
+  # Sensor config loading and validation (MULTI_SENSOR_PLAN.md Phase 4,
+  # M2/M13).
+  ament_add_gtest(test_sensor_config test/test_sensor_config.cc
+    SKIP_LINKING_MAIN_LIBRARIES)
+  target_link_libraries(test_sensor_config ${PROJECT_NAME} gtest)
 
   # NpTsdfServer range-image preprocessing regressions ("Known upstream
   # issues" #1-#3 in docs/ROS2_PORT_NOTES.md).
