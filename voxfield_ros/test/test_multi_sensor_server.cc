@@ -419,6 +419,98 @@ TEST(MultiSensorServer, ThrottleIsPerSensor) {
   EXPECT_EQ(server.sensors_[1]->num_throttled, 0u);
 }
 
+// ---- M9: body_frame changes block removal to be relative to the body ----
+
+// Two servers, identical except for body_frame, each with two sensors:
+// A at world (5,0,0), B at world (6,0,0) (T_G_D is identity, so T_B_C's
+// translation is the sensor's world position directly) -- "two sensors
+// 1 m apart" per the plan. A's cloud places a block whose origin (the
+// block's min corner, what removeDistantBlocks() actually compares, not
+// its center) is at world (12,0,0): 12 m from the body (base_link, at the
+// world origin) but only 7 m from sensor A's own position, so a
+// max_block_distance_from_body of 10 m removes it with body_frame set and
+// keeps it without (the pre-M9, per-sensor-pose behavior).
+//
+// Points use a small nonzero z (0.3) rather than lying exactly on the
+// sensor's local x-axis: a ray with two exactly-zero direction components
+// hits a degenerate case in voxfield's own MergedTsdfIntegrator (isolated
+// and confirmed with a standalone reproduction outside this repo's code,
+// unrelated to multi-sensor -- see docs/MULTI_SENSOR_NOTES.md) where the
+// integrator only ever touches the block containing the ray's *origin*,
+// never the block containing the actual far point. Every other geometry in
+// this file (box-room raycasts) already has natural x/y/z diversity and
+// never hit it; this is the one test that picked an axis-aligned point by
+// hand.
+TEST(MultiSensorServer, BodyFrameChangesBlockRemovalReference) {
+  auto runScenario =
+      [](const std::string& name, bool use_body_frame) {
+        std::vector<rclcpp::Parameter> extra = {
+            rclcpp::Parameter(
+                "sensor_names", std::vector<std::string>{"a", "b"}),
+            rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
+            rclcpp::Parameter("sensors.b.topic", "b_pointcloud"),
+            rclcpp::Parameter(
+                "sensors.a.T_B_C",
+                std::vector<double>{
+                    1, 0, 0, 5, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}),
+            rclcpp::Parameter(
+                "sensors.b.T_B_C",
+                std::vector<double>{
+                    1, 0, 0, 6, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}),
+            rclcpp::Parameter("max_block_distance_from_body", 10.0),
+        };
+        if (use_body_frame) {
+          extra.push_back(rclcpp::Parameter("body_frame", "base_link"));
+        }
+        auto node = makeMultiSensorNode(name, extra);
+        auto server = std::make_unique<TestServer>(node);
+
+        constexpr int64_t kMinusNs = 995000000LL;
+        constexpr int64_t kFrameNs = 1000000000LL;
+        constexpr int64_t kPlusNs = 1005000000LL;
+        pushTransform(server.get(), Transformation(), kMinusNs, "map");
+        pushTransform(server.get(), Transformation(), kPlusNs, "map");
+        const rclcpp::Time stamp(kFrameNs, RCL_ROS_TIME);
+
+        // Sensor A (world position (5,0,0)): local (7.5,0,0.3) -> world
+        // (12.5,0,0.3), inside the block with origin (12,0,0).
+        server->insertPointcloud(
+            makeCloudMsg(
+                {Eigen::Vector3f(7.5f, 0.0f, 0.3f)}, stamp, "a_frame"),
+            server->sensors_[0].get());
+        // Sensor B (world position (6,0,0)): a harmless nearby point, just
+        // to integrate from both sensors per the plan's scenario.
+        server->insertPointcloud(
+            makeCloudMsg(
+                {Eigen::Vector3f(1.0f, 0.0f, 0.3f)}, stamp, "b_frame"),
+            server->sensors_[1].get());
+        return server;
+      };
+
+  const std::unique_ptr<TestServer> with_body =
+      runScenario("body_frame_with", true);
+  const std::unique_ptr<TestServer> without_body =
+      runScenario("body_frame_without", false);
+
+  const Layer<TsdfVoxel>& layer_with_body =
+      with_body->getTsdfMapPtr()->getTsdfLayer();
+  const Layer<TsdfVoxel>& layer_without_body =
+      without_body->getTsdfMapPtr()->getTsdfLayer();
+
+  EXPECT_EQ(
+      layer_with_body.getVoxelPtrByCoordinates(Point(12.5f, 0.0f, 0.3f)),
+      nullptr)
+      << "block 12m from the body (>10m threshold) should have been "
+         "removed with body_frame set";
+
+  const TsdfVoxel* kept_voxel =
+      layer_without_body.getVoxelPtrByCoordinates(Point(12.5f, 0.0f, 0.3f));
+  ASSERT_NE(kept_voxel, nullptr)
+      << "block 7m from sensor A (<10m threshold) should have been kept "
+         "without body_frame";
+  EXPECT_GT(kept_voxel->weight, 0.0f);
+}
+
 // ---- ICP guard (M11) ----
 
 TEST(MultiSensorServer, IcpIsDisabledWithMultipleSensors) {

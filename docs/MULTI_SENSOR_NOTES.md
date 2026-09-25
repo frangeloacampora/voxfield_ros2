@@ -533,3 +533,72 @@ entry). `test_legacy_golden_np_tsdf` and all 8 `test_np_tsdf_server` cases
 passed with zero edits. `git status` after this phase touches
 `np_tsdf_server.{h,cc}`, `sensor_config_loader.cc` (the log fix),
 `CMakeLists.txt`, and `test_multi_sensor_server.cc`.
+
+## Phase 7: Body frame for derived ESDF servers (M9) + optional status topic
+
+**Step 1 (verify, no code change expected):** grepped every `T_G_C.`
+access in `voxblox_server.cc`, `voxfield_server.cc`, `fiesta_server.cc`,
+and `voxedt_server.cc` — every one is `.getPosition()` (`removeDistantBlocks`,
+`addNewRobotPosition`), confirmed by an empty grep for any *other* member
+access. Since Phase 5 already made `TsdfServer::processPointCloudMessageAndInsert()`
+pass the body pose (when `body_frame` is set) as the argument to the
+virtual `newPoseCallback()` these four servers override, and none of them
+read anything but the position out of that argument, M9 reaches all four
+with **zero code changes** in this phase, exactly as predicted.
+
+**Step 2 test:** `test_multi_sensor_server.cc`'s new
+`BodyFrameChangesBlockRemovalReference` case — two servers (`body_frame`
+set vs. unset), each with two sensors 1 m apart (`T_B_C` translations
+(5,0,0) and (6,0,0), body/`T_G_D` at the world origin), `max_block_distance_from_body:
+10`. Sensor A's cloud places a block whose *origin* (the block's min
+corner — what `Layer::removeDistantBlocks()` actually compares against,
+not the block's center) is at world (12,0,0): 12 m from the body but only
+7 m from sensor A's own position. Passes on both sides: removed with
+`body_frame` set, kept without it.
+
+**A real bug found and isolated while writing this test, confirmed
+out of scope, not fixed here.** The test's first version used points lying
+exactly on the sensor's local x-axis (`y = z = 0`). Every such point
+integrated correctly in every *previous* multi-sensor test (all of which
+use box-room raycasts or camera grids with natural x/y/z spread) but here,
+alone, the resulting map only ever had a block at the *ray's origin*, never
+one anywhere near the actual far point — regardless of translation, and
+regardless of using 1 or 20 such points. Isolated with a **standalone
+program linked directly against `libvoxfield.so`**, bypassing this
+package's server/test code entirely (`voxfield::MergedTsdfIntegrator`
+constructed and called directly): a point at `(x, 0, 0)` for *any* `x`
+(1 through 12.5 m tried) only ever allocates the block containing the
+ray's origin; the same point with a nonzero z (e.g. `(5, 0, 0.437)`, copied
+from a passing test) allocates the correct block too. The bug is a
+**degenerate case in `MergedTsdfIntegrator`'s ray traversal when the ray
+direction has two exactly-zero components** (i.e. a ray parallel to a
+coordinate axis) — evidently never previously exercised by any test in
+either this package or `voxfield`'s own `test_sdf_integrators` suite, since
+real sensor data (and every synthetic raycast in this plan) essentially
+never produces an exactly axis-aligned ray. This is squarely inside
+`voxfield/src/integrator/tsdf_integrator.cc`, which §1.3 puts out of scope
+("No `voxfield/src/integrator/*` changes are expected. If one turns out to
+be necessary, stop and document why.") — so, per that instruction: **not
+fixed here**, and flagged here for the user's awareness, since it's a
+latent correctness issue that predates this plan and could affect any
+caller (single- or multi-sensor) whose sensor happens to produce an
+axis-aligned ray (e.g. a purely horizontal or vertical calibration ray in a
+test fixture). The multi-sensor test itself was fixed by giving its points
+a small deliberate z offset (0.3 m), matching how every other geometry in
+this file already avoids the case incidentally.
+
+**Step 3 (optional `~/sensor_status` `DiagnosticArray`, M15): skipped,
+time-boxed**, exactly as the plan allows ("Skip it if time-boxed; say so in
+the notes"). The `SensorInput` stats fields it would report
+(`num_received`/`num_throttled`/`num_dropped`/`num_integrated`, last
+stamp, last integration ms) already exist on every `SensorInput` (M4) and
+are exercised directly by tests (`ThrottleIsPerSensor`); wiring them to a
+published topic is straightforward future work if wanted, but the INFO-level
+per-sensor logging `sensor_config_loader.cc` already emits at construction
+(M13.8) covers the "is my multi-sensor config doing what I think"
+question this topic would mostly answer.
+
+**Full suite:** `Summary: 148 tests, 0 errors, 0 failures, 4 skipped` (147
++ 1 new case, no new CTest binary since it was added to the existing
+`test_multi_sensor_server` target). `git status` after this phase touches
+only `test_multi_sensor_server.cc`.
