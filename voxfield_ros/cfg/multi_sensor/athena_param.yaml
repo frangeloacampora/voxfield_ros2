@@ -1,0 +1,81 @@
+# Map-global parameters for the Athena robot (MULTI_SENSOR_PLAN.md §7.5,
+# §8 Phase 8 step 4). Loaded together with athena_dual_lidar.yaml or
+# athena_lidar_rgbd.yaml (which carry sensor_names + sensors.*.* plus the
+# shared LiDAR/camera-model defaults, per M2's inheritance) by
+# multi_sensor_mapping.launch.py's `param_file`/`sensors_file` arguments.
+#
+# Starts from the local, uncommitted Phase 12 param file described in
+# docs/ROS2_PORT_NOTES.md's Step 4 (world_frame: map, voxel_size: 0.1, ICP
+# off), converted to the full key set every other cfg/param/*.yaml file
+# here sets -- values not called out below are carried over from
+# kitti_param.yaml (the shape every other *_param.yaml file in this repo
+# follows), with one fix: kitti_param.yaml's `integration_threads` key is a
+# pre-existing typo (the real parameter is `integrator_threads`, per
+# ros_params.h) that silently does nothing; not repeated here.
+/**:
+  ros__parameters:
+    tsdf_voxel_size: 0.1
+    # tsdf_voxels_per_side / voxels_per_side_in_block: left at the default
+    # (16), matching the already-validated Phase 12 run (docs/
+    # ROS2_PORT_NOTES.md Step 4) -- that run's local param file never set
+    # this key either.
+    occ_voxel_size: 0.1
+    occ_voxels_per_side: 16
+    esdf_voxel_size: 0.1
+    esdf_voxels_per_side: 16
+    truncation_distance: -3.0
+    method: merged
+    merge_with_clear: true
+    max_ray_length_m: 30.0
+    min_ray_length_m: 0.3
+    integrator_threads: 6
+    use_const_weight: false
+    use_weight_dropoff: true
+    weight_reduction_exp: 1.0
+    curve_assumption: true
+    reliable_band_ratio: 3.0
+    reliable_normal_ratio_thre: 0.05
+    local_range_offset_x: 20
+    local_range_offset_y: 20
+    local_range_offset_z: 10
+    esdf_default_distance_m: 3.0
+    max_behind_surface_m: 1.0
+    num_buckets: 50
+    patch_on: true
+    early_break: true
+    finer_esdf_on: true
+    eval_esdf_on: false
+    occ_voxel_size_ratio: 0.865
+    occ_min_weight: 0.0001
+    probability_hit: 0.7
+    probability_miss: 0.4
+    threshold_min: 0.12
+    threshold_max: 0.97
+    threshold_occupancy: 0.7
+    # ICP off (Phase 12), and forbidden per sensor / disabled outright once
+    # sensor_names has more than one entry anyway (M11).
+    enable_icp: false
+    use_tf_transforms: true
+    world_frame: map
+    # M9: block removal / clear-sphere / newPoseCallback() use base_link's
+    # pose, not whichever sensor happened to integrate last.
+    body_frame: base_link
+    max_block_distance_from_body: 50.0
+    # M12: multi-sensor mode counts every integrated cloud, from every
+    # sensor, as one "frame" -- these must stay positive (seconds), not
+    # "every N frames" (a negative value), or the effective rate scales
+    # with sensor count. See the plan's M12 and docs/MULTI_SENSOR_NOTES.md.
+    update_mesh_every_n_sec: 1.0
+    update_esdf_every_n_sec: 1.0
+    publish_map_every_n_sec: 1.0
+    eval_esdf_every_n_sec: 0.0
+    min_time_between_msgs_sec: 0.0
+    color_mode: normals
+    intensity_colormap: rainbow
+    publish_traversable: false
+    publish_pointclouds: false
+    publish_slices: true
+    publish_robot_model: false
+    slice_level: 0.5
+    verbose: false
+    timing: true

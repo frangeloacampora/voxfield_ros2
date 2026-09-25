@@ -238,6 +238,17 @@ if(BUILD_TESTING)
       TIMEOUT 60
     )
   endforeach()
+
+  # Dataset-free multi-sensor smoke test (MULTI_SENSOR_PLAN.md §8 Phase 8
+  # step 2): one launch_test per integration path -- voxfield (projective/
+  # NP) and voxblox (non-projective/ray-casting).
+  foreach(_multi_smoke_method IN ITEMS voxfield voxblox)
+    add_launch_test(test/test_multi_sensor_smoke.launch.py
+      TARGET test_multi_sensor_smoke_${_multi_smoke_method}
+      ARGS "method:=${_multi_smoke_method}"
+      TIMEOUT 60
+    )
+  endforeach()
 endif()
 
 ##########

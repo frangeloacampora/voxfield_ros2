@@ -1,0 +1,23 @@
+# Sensor configuration for the Athena robot's two Livox LiDARs
+# (MULTI_SENSOR_PLAN.md §7.5, §8 Phase 8 step 4). Loaded together with
+# athena_param.yaml (map-global params) by multi_sensor_mapping.launch.py.
+#
+# `fov_up`/`fov_down` are PLACEHOLDERS: §3.3 of the plan says to measure
+# the real Livox pitch range from the bag (Phase 9 step 1) and update
+# these before relying on this file for a real run. `sensor_is_lidar`/
+# `width`/`height`/`fov_up`/`fov_down` are top-level here (not per-sensor)
+# because both LiDARs share the same model (M2 inheritance) -- neither
+# `sensors.front_lidar.*` nor `sensors.back_lidar.*` needs to repeat them.
+/**:
+  ros__parameters:
+    sensor_names: [front_lidar, back_lidar]
+    sensor_is_lidar: true
+    fov_up: 52.0   # placeholder -- measure from the bag, Phase 9 step 1
+    fov_down: -7.0  # placeholder -- measure from the bag, Phase 9 step 1
+    width: 360
+    height: 32
+    sensors:
+      front_lidar:
+        topic: /athena/front_lidar/points_raw_livox
+      back_lidar:
+        topic: /athena/back_lidar/points_raw_livox

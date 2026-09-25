@@ -602,3 +602,182 @@ question this topic would mostly answer.
 + 1 new case, no new CTest binary since it was added to the existing
 `test_multi_sensor_server` target). `git status` after this phase touches
 only `test_multi_sensor_server.cc`.
+
+## Phase 8: Launch, configs, fake publisher, smoke test
+
+**Step 1: `scripts/fake_sensor_publisher.py`.** Added `num_sensors`
+(default 1), `sensor_yaw_offsets_deg` (comma-separated string, default
+evenly spaced), and `sensor_rig_offset_m` (default 0.5). Sensor *i* now
+gets frame `<sensor_frame>_<i>`, mounted on a rig frame
+`<sensor_frame>_rig` at `sensor_rig_offset_m` and yaw offset *i* from
+`sensor_yaw_offsets_deg`, publishing on `<pointcloud_topic>_<i>`; each
+sensor's emitted points are filtered to `cos(azimuth) >= 0` (±90° of its
+own forward axis), computed once as a precomputed direction-index subset
+so the per-tick cost is unchanged. `publish_tf` now broadcasts a moving
+`world → <sensor_frame>_rig` transform (or publishes it on `~/transform`
+when `publish_tf:=false`, matching the existing single-sensor behavior)
+plus a *static* `<sensor_frame>_rig → <sensor_frame>_i` per sensor via
+`StaticTransformBroadcaster`, published once at startup.
+
+`num_sensors:=1` is byte-identical to the old code path (verified: the
+`tick()` method dispatches to an untouched `_tick_single_sensor()` body
+when `num_sensors == 1`, and all 5 pre-existing single-sensor smoke
+launch tests pass unmodified). Manually verified `num_sensors:=2
+sensor_yaw_offsets_deg:="0,180" width:=64 height:=8`: topics
+`/pointcloud_0`/`/pointcloud_1` only (no unsuffixed `/pointcloud`), static
+TF `velodyne_rig → velodyne_0` at `(0.5, 0, 0)` identity rotation and
+`velodyne_rig → velodyne_1` at `(-0.5, ~0, 0)` yaw 180° (`ros2 topic echo
+/tf_static --once`), and exactly 256 points per cloud (half of 64×8=512,
+confirming the ±90° filter). `publish_tf:=false` confirmed publishing
+`~/transform` with `frame_id: world, child_frame_id: velodyne_rig`.
+
+**Step 2: `test/test_multi_sensor_smoke.launch.py`.** Registered for both
+`method:=voxfield` and `method:=voxblox`. Starts the fake publisher with
+`num_sensors:=2 sensor_yaw_offsets_deg:=0,180 width:=256 height:=16` and
+the server with `sensor_names: [s0, s1]`, `sensors.s0.topic:
+pointcloud_0`, `sensors.s1.topic: pointcloud_1`,
+`update_esdf_every_n_sec: 1`. Four assertions, all within the 40 s
+budget: `test_mesh_has_both_walls` (accumulates growing mesh messages
+until both a block with world `x > 4` and one with world `x < -4` are
+seen — world coordinates recovered from the message's quantized
+`uint16` vertex encoding via `world_x = block_edge_length *
+(block_index_x + 2.0 * (x_uint16 / 65535.0))`, the exact inverse of
+`mesh_vis.h`'s `generateVoxbloxMeshMsg()`), `test_esdf_slice_nonempty`,
+`test_save_load_roundtrip` (same pattern as the existing single-sensor
+smoke test), and `test_no_error_lines` (filters `proc_output[server]` —
+i.e., only the server process's captured stdout/stderr via
+`IoHandler.__getitem__` — for `"ERROR"` substrings, so the fake
+publisher's own output can't cause a false failure). Both
+`test_multi_sensor_smoke_voxfield` and `test_multi_sensor_smoke_voxblox`
+pass 4/4.
+
+**Single-sensor sanity check (manual, not automated, per the plan's "a
+sanity run in the notes").** Ran the same two-sensor fake publisher
+(`num_sensors:=2 sensor_yaw_offsets_deg:=0,180 width:=256 height:=16
+spin_period_sec:=30.0`) against a `voxblox_server` configured with only
+`sensor_names:=[s0]` / `sensors.s0.topic:=/pointcloud_0` — deliberately
+ignoring the second sensor's topic — and subscribed directly to the
+server's own mesh topic, classifying each message by the same
+quantized-vertex decode used in the smoke test. Over the first ~29 mesh
+messages (`update_mesh_every_n_sec: 0.1`, ≈3 s of publisher time), only
+the `+x` wall (the one visible from sensor `s0`'s own ±90° FOV at its
+initial pose) ever appears; a single message (msg 29) also showed a
+`-x` block, which reverted to absent on the very next message and is
+attributed to a block spanning the `x = ±4` classification boundary
+rather than genuine `-x` wall coverage — the rig's slow spin
+(`spin_period_sec: 30`) means the sensor's forward axis eventually
+sweeps far enough to graze the far wall's edge given enough elapsed
+time, so this check only holds reliably over a short window, not
+indefinitely. This confirms the plan's expectation: with only one
+limited-FOV sensor subscribed, the fused map does not show both walls
+(at least not early/for an extended window), in contrast to the
+two-sensor automated test which does.
+
+A naming pitfall hit while running this manually, worth recording:
+running `voxblox_server` directly via `ros2 run` (rather than through a
+launch file, which explicitly passes `name="voxfield_node"`) uses the
+executable's own default node name, which for `voxblox_server` is
+`voxblox` — so the mesh topic is `/voxblox/mesh`, not
+`/voxfield_node/mesh`. This mirrors the Phase 6 finding that
+`np_tsdf_server`'s default node name is `voxfield` (not `np_tsdf`), i.e.
+neither executable's default node name matches its own filename; both
+are pre-existing quirks unrelated to this plan, noted only because they
+cost real debugging time (`ros2 topic echo` and a subscriber script both
+silently saw zero messages against the wrong topic name, even though the
+server's own log clearly showed successful periodic mesh updates).
+
+**Step 3: `launch/multi_sensor_mapping.launch.py`.** Arguments: `method`,
+`param_file`, `sensors_file`, `bag_file` (default `""`), `play_bag`
+(default `true`), `speed`, `start_offset`, `rviz` (default `true`),
+`rviz_config` (falls back to `cfg/rviz/multi_sensor.rviz`),
+`use_sim_time` (default `true`), `tf_remap_prefix` (default `""`), and
+`rgbd` (default `false`). Bag playback uses `--clock`, `-r <speed>`, an
+optional `--start-offset`, and always applies
+`cfg/multi_sensor/tf_static_qos_override.yaml` (port plan pitfall §8.7:
+`ros2 bag play`'s `/tf_static` can be volatile, dropping late-joining
+listeners' static TF unless overridden to `transient_local`/`keep_all`).
+When `tf_remap_prefix` is set (e.g. `/athena`), `/tf → <prefix>/tf` and
+`/tf_static → <prefix>/tf_static` remaps are applied to **both** the
+server node and — per pitfall §9.9 — the `rviz2` node when `rviz:=true`.
+
+When `rgbd:=true`, one `ComposableNodeContainer` per camera
+(`_ATHENA_RGBD_CAMERAS = ["front", "back"]`) loads an
+`image_transport::Republisher` (`in_transport: compressedDepth,
+out_transport: raw`, remapping `in/compressedDepth` to
+`/athena/<camera>_rgbd/depth/image_raw/compressedDepth` and `out` to a
+new `.../image_raw_decoded` topic) feeding a
+`depth_image_proc::PointCloudXyzNode` (remapping `image_rect` to that
+decoded topic, `camera_info` to `/athena/<camera>_rgbd/depth/camera_info`,
+and `points` to `/athena/<camera>_rgbd/points`). The exact plugin names
+and remap keys were confirmed per the plan's explicit instruction to
+check with `ros2 component types` (both plugins listed) and `ros2 param
+list` on standalone-run instances of each: `image_transport::Republisher`
+selects transports via the *declared parameters* `in_transport`/
+`out_transport`, not positional CLI args or remap-only selection (an
+earlier attempt using positional `compressedDepth raw` args silently
+republished every transport under `/out/<transport>` with zero
+subscribers — fixed by using `-p in_transport:=... -p
+out_transport:=...`); `depth_image_proc::PointCloudXyzNode` takes plain
+`image_rect`/`camera_info`/`points` topic remaps plus its own
+`depth_image_transport` parameter.
+
+Verified manually, twice, end-to-end via `ros2 launch`: (a)
+`play_bag:=false rviz:=false` with `athena_param.yaml` +
+`athena_dual_lidar.yaml` started cleanly and printed exactly the
+expected M13 per-sensor INFO lines for `front_lidar` and `back_lidar`
+(topic, frame, ray range, and LiDAR FOV); (b) the same with `rgbd:=true`
+and `athena_lidar_rgbd.yaml` printed all 4 sensors' INFO lines, and both
+RGB-D `ComposableNodeContainer`s loaded their two components with zero
+errors.
+
+**Step 4: configs.** `cfg/multi_sensor/athena_param.yaml` (map-global
+params) starts from the local, uncommitted Phase 12 param file described
+in `docs/ROS2_PORT_NOTES.md` Step 4 (`world_frame: map`, `tsdf_voxel_size:
+0.1`, ICP off), converted to the full key set every other
+`cfg/*/*_param.yaml` in this repo carries, with one deliberate fix:
+`kitti_param.yaml` sets `integration_threads`, which is a pre-existing
+typo (the real key, per `ros_params.h`, is `integrator_threads`) that
+silently does nothing — not repeated here; `athena_param.yaml` sets
+`integrator_threads: 6`. `body_frame: base_link` (M9) and
+`update_{mesh,esdf}_every_n_sec` / `publish_map_every_n_sec` all left
+positive (M12's multi-sensor "every N frames" pitfall: with multiple
+sensors each publishing a cloud counted as one frame, a negative
+"every N frames" value's effective rate would scale with sensor count).
+
+`cfg/multi_sensor/athena_dual_lidar.yaml` (two Livox LiDARs) and
+`cfg/multi_sensor/athena_lidar_rgbd.yaml` (adds two RGB-D cameras) both
+carry a documented **placeholder**: `fov_up: 52.0` / `fov_down: -7.0` are
+not yet measured from the real bag — that's Phase 9 step 1's job, and
+both files say so in a comment. The RGB-D file's per-camera `fx`/`fy`/
+`vx`/`vy` are real values already read from this machine's bag
+(`/athena/{front,back}_rgbd/depth/camera_info`): front
+`fx=fy=451.5, vx=325.8, vy=242.6`; back `fx=fy=452.0, vx=327.1,
+vy=241.0`; both 640×480, `max_ray_length_m: 4.0`,
+`min_time_between_msgs_sec: 0.4`, topic `/athena/<camera>_rgbd/points`
+matching the launch file's RGB-D pipeline output.
+
+**Step 5: `cfg/rviz/multi_sensor.rviz`.** Based on `kitti_25cm.rviz`'s
+structure. `Fixed Frame: map`. `VoxfieldMesh` on `/voxfield_node/mesh`
+(`Durability Policy: Transient Local`), ESDF slice on
+`/voxfield_node/esdf_slice`, TF, a Robot Model marker, and one
+`PointCloud2` per raw sensor topic in a distinct flat color (front =
+red, `/athena/front_lidar/points_raw_livox`; back = blue,
+`/athena/back_lidar/points_raw_livox`). YAML-validated with
+`python3 -c "import yaml; yaml.safe_load(...)"`.
+
+**`package.xml`:** added `rclcpp_components`, `image_transport`,
+`compressed_depth_image_transport`, `depth_image_proc` as
+`exec_depend`s for the `rgbd:=true` launch path.
+
+**Full suite:** `Summary: 158 tests, 0 errors, 0 failures, 4 skipped` (148
++ 2 new launch-test binaries × ~5 tests each, no new gtest binaries this
+phase). `ros2 launch voxfield_ros multi_sensor_mapping.launch.py
+method:=voxfield param_file:=… sensors_file:=… play_bag:=false` starts
+cleanly and M13 prints one INFO line per sensor (verified above, both
+without and with `rgbd:=true`). `git status` after this phase touches
+`scripts/fake_sensor_publisher.py`, `voxfield_ros/CMakeLists.txt`,
+`voxfield_ros/package.xml` (new `exec_depend`s), and adds
+`voxfield_ros/test/test_multi_sensor_smoke.launch.py`,
+`voxfield_ros/launch/multi_sensor_mapping.launch.py`,
+`voxfield_ros/cfg/multi_sensor/*.yaml`,
+`voxfield_ros/cfg/rviz/multi_sensor.rviz`.

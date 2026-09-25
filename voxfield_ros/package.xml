@@ -43,6 +43,12 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
+  <!-- MULTI_SENSOR_PLAN.md §8 Phase 8: optional rgbd:=true path in
+       multi_sensor_mapping.launch.py. -->
+  <exec_depend>rclcpp_components</exec_depend>
+  <exec_depend>image_transport</exec_depend>
+  <exec_depend>compressed_depth_image_transport</exec_depend>
+  <exec_depend>depth_image_proc</exec_depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>

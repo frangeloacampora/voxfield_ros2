@@ -1,0 +1,11 @@
+# QoS override for `ros2 bag play` (ROS2_PORT_PLAN.md §8 pitfall 7,
+# MULTI_SENSOR_PLAN.md §8 Phase 8 step 3): `/tf_static` messages recorded
+# with the standard latched (transient_local, keep_all) QoS can otherwise
+# be replayed as volatile, so a listener that starts after the bag has
+# already published them (e.g. the mapping server, started slightly after
+# `ros2 bag play`) never receives them, and every TF lookup through a
+# static link in the chain fails. Pass this file's path to
+# `ros2 bag play --qos-profile-overrides-path`.
+/tf_static:
+  durability: transient_local
+  history: keep_all
