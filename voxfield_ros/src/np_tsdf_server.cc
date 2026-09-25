@@ -485,8 +485,12 @@ bool NpTsdfServer::getNextPointcloudFromQueue(
   }
   *pointcloud_msg = queue->front();
 
+  // MULTI_SENSOR_PLAN.md F1/M5: see the identical comment in tsdf_server.cc.
+  const std::string& from_frame = sensor_frame_.empty()
+      ? (*pointcloud_msg)->header.frame_id
+      : sensor_frame_;
   if (transformer_.lookupTransform(
-          sensor_frame_, world_frame_,
+          from_frame, world_frame_,
           rclcpp::Time((*pointcloud_msg)->header.stamp, RCL_ROS_TIME), T_G_C)) {
     queue->pop();
     return true;

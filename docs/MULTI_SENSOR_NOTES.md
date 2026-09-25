@@ -160,3 +160,90 @@ position.
 skipped` (104 + 9 new `test_range_image_projector` cases + 1 new CTest
 aggregate entry + 5 new `test_param_utils` cases). Same 4 pre-existing
 skips.
+
+## Phase 3: `Transformer` changes (M5, M6)
+
+**M5 — frame resolution moved out of `Transformer`.** Removed
+`Transformer::sensor_frame_` and `lookupTransformTf`'s override (it used to
+silently substitute `sensor_frame_` for whatever `from_frame` a caller
+passed, if set — so in TF mode every sensor would really be looked up in
+one shared frame). `lookupTransform()`'s `from_frame` argument is now used
+exactly as given. `TsdfServer`/`NpTsdfServer::getNextPointcloudFromQueue()`
+now resolve the frame themselves before calling it:
+`sensor_frame_.empty() ? pointcloud_msg->header.frame_id : sensor_frame_` —
+this is also **F1**, the deliberate legacy fix: previously an empty
+`sensor_frame` meant the lookup used frame `""` and failed forever; now it
+falls back to the message's own header frame (upstream voxblox behavior).
+`IntensityServer::intensityImageCallback` (A17) got the identical fix,
+since it relied on the same override.
+
+`grep -rn sensor_frame voxfield_ros/cfg` confirms F1 changes nothing for
+any shipped config: `mai_param.yaml`, `kitti_param.yaml`, and
+`basement_param.yaml` all set `sensor_frame` explicitly (non-empty, so F1's
+fallback path is never taken); `cow_param.yaml` and `vicon_param.yaml`
+don't set it, but both use `use_tf_transforms: false` (queue mode), where
+`sensor_frame`/`from_frame` was already ignored entirely (queue-mode
+lookups only match on timestamp) — F1 only ever mattered for a TF-mode
+config with `sensor_frame` unset, and no shipped config is that.
+
+**M6 — per-sensor extrinsic queue-mode API, retention window, `tfBuffer()`.**
+New public `Transformer` API, additive (old `lookupTransform(from, to,
+stamp, T)` kept working unchanged — its queue branch now calls
+`lookupTransformQueue(timestamp, T_B_C_, transform)` with the global
+`T_B_C_`, so legacy output is identical):
+- `lookupTransformQueue(stamp, T_B_C, T_G_C)`: same match/interpolate logic
+  as before, but `T_D_C = T_B_D_.inverse() * T_B_C` is computed per call
+  from a caller-supplied `T_B_C` instead of a ctor-precomputed member
+  (`T_D_C_` removed entirely — nothing else used it). `T_B_D` stays global,
+  matching the plan's split.
+- `lookupSensorTransform(frame, T_B_C_or_null, stamp, T_G_C)`: routes to TF
+  or queue mode per `use_tf_transforms_`, taking a single already-resolved
+  `frame` (the caller — Phase 5's per-sensor frontend — does the `cfg.frame
+  .empty() ? header.frame_id : cfg.frame` resolution, matching M5).
+- `tfBuffer()`: test-only accessor to `tf2_ros::Buffer`, so a test can
+  inject static/dynamic transforms with `setTransform(...)` instead of
+  broadcasting and spinning.
+- **A8 fix:** the old `transform_queue_.erase(begin, it)` (erase everything
+  before this lookup's own matched/bracketing entry) is replaced with
+  "erase entries older than `stamp - transform_queue_retention_sec`" (new
+  global param, default `1.0`) plus a 10 000-entry cap (drop oldest). The
+  old policy broke with >1 sensor: sensor A's lookup would erase queue
+  entries a *second* sensor's earlier-stamped lookup still needed as its
+  interpolation bracket. Single-sensor output is unaffected except when two
+  consecutive clouds are stamped closer together than
+  `timestamp_tolerance_sec` (1 ms default) — negligible, undocumented
+  upstream, and not exercised by any shipped config's real sensor rate.
+
+**Sanity check (A8 reproduces on the old policy):** temporarily replaced
+the new retention-window code with the literal old
+`transform_queue_.erase(transform_queue_.begin(), it)` (the new
+`lookupTransformQueue` already has `it` in the right state at that point,
+so no other change was needed), rebuilt, and ran
+`test_transformer_multi.DifferentSensorsCanLookUpOutOfOrder` alone: it
+fails exactly as predicted (`No match found for transform timestamp:
+995000000 Queue front: 1000000000` — the 900 ms entry sensor B's
+interpolation needed was already gone, erased by sensor A's own lookup at
+1000 ms). Reverted immediately after and confirmed the full suite green
+again. (A literal "run against the actual Phase 2 `Transformer`" wasn't
+possible since the new test uses API — `lookupTransformQueue`'s new
+signature, `transformQueueSizeForTest()`, `tfBuffer()` — that class didn't
+expose yet; isolating just the erase-policy line is the faithful
+equivalent.)
+
+**`test/test_transformer_multi.cc`** (new, 4 cases):
+`DifferentSensorsCanLookUpOutOfOrder` (above), `RetentionWindowErasesOnlyOldEntries`
+(20 entries 0–1900 ms, lookup at 1900 ms with `retention_sec=1.0` leaves
+exactly the 11 entries from 900 ms onward), `SizeCapDropsOldestBeyondTenThousand`
+(10 005 entries 1 ms apart within one large retention window, one lookup
+caps the queue at exactly 10 000), and `TfModeUsesTheGivenFrameForEachSensor`
+(two independent static TF child frames, proving no cross-sensor frame
+override remains — this is also the mechanism F1 depends on, so a
+separate literal "F1" test wasn't added: `Transformer` itself has no
+`sensor_frame` concept left to test in isolation once M5 moved frame
+resolution to the caller).
+
+**Accept:** all tests pass; `test_legacy_golden_{tsdf,np_tsdf}` exact; the 5
+existing smoke launch tests still pass. `Summary: 124 tests, 0 errors, 0
+failures, 4 skipped` (119 + 4 new `test_transformer_multi` cases + 1 new
+CTest aggregate entry). `git status` after this phase touches only
+`voxfield_ros` C++/CMake/test files.

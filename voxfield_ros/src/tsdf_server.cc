@@ -428,8 +428,16 @@ bool TsdfServer::getNextPointcloudFromQueue(
     return false;
   }
   *pointcloud_msg = queue->front();
+  // MULTI_SENSOR_PLAN.md F1/M5: Transformer used to silently substitute its
+  // own sensor_frame_ for whatever from_frame was passed in (if set), and
+  // an unset sensor_frame_ meant the lookup used frame "" and failed
+  // forever. Frame resolution now lives here: sensor_frame_ if set,
+  // otherwise the message's own header frame (upstream voxblox behavior).
+  const std::string& from_frame = sensor_frame_.empty()
+      ? (*pointcloud_msg)->header.frame_id
+      : sensor_frame_;
   if (transformer_.lookupTransform(
-          sensor_frame_, world_frame_,
+          from_frame, world_frame_,
           rclcpp::Time((*pointcloud_msg)->header.stamp, RCL_ROS_TIME), T_G_C)) {
     queue->pop();
     return true;

@@ -77,9 +77,15 @@ void IntensityServer::intensityImageCallback(
   CHECK(intensity_integrator_);
   CHECK(image);
   // Look up transform first...
+  // MULTI_SENSOR_PLAN.md A17/M5: Transformer used to silently substitute its
+  // own sensor_frame_ for whatever from_frame was passed in, if set. Now
+  // that the override is gone, replicate that behavior here explicitly, the
+  // same way TsdfServer::getNextPointcloudFromQueue() does.
+  const std::string& from_frame =
+      sensor_frame_.empty() ? image->header.frame_id : sensor_frame_;
   Transformation T_G_C;
   if (!transformer_.lookupTransform(
-          image->header.frame_id, world_frame_,
+          from_frame, world_frame_,
           rclcpp::Time(image->header.stamp, RCL_ROS_TIME), &T_G_C)) {
     RCLCPP_WARN_THROTTLE(
         node_->get_logger(), *node_->get_clock(), 10000,

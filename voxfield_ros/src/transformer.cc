@@ -1,5 +1,7 @@
 #include "voxfield_ros/transformer.h"
 
+#include <algorithm>
+
 #include "voxfield_ros/kindr_conversions.h"
 #include "voxfield_ros/param_utils.h"
 
@@ -9,11 +11,10 @@ namespace voxfield {
 Transformer::Transformer(rclcpp::Node::SharedPtr node)
     : node_(node),
       world_frame_("world"),
-      sensor_frame_(""),
       use_tf_transforms_(true),
-      timestamp_tolerance_ns_(1000000) {
+      timestamp_tolerance_ns_(1000000),
+      transform_queue_retention_sec_(1.0) {
   param(*node_, "world_frame", world_frame_);
-  param(*node_, "sensor_frame", sensor_frame_);
 
   const double kNanoSecondsInSecond = 1.0e9;
   double timestamp_tolerance_sec =
@@ -21,6 +22,10 @@ Transformer::Transformer(rclcpp::Node::SharedPtr node)
   param(*node_, "timestamp_tolerance_sec", timestamp_tolerance_sec);
   timestamp_tolerance_ns_ =
       static_cast<int64_t>(timestamp_tolerance_sec * kNanoSecondsInSecond);
+
+  // MULTI_SENSOR_PLAN.md M6.
+  param(
+      *node_, "transform_queue_retention_sec", transform_queue_retention_sec_);
 
   // Transform settings.
   param(*node_, "use_tf_transforms", use_tf_transforms_);
@@ -46,7 +51,6 @@ Transformer::Transformer(rclcpp::Node::SharedPtr node)
     getTransformationParam(*node_, "T_B_D", "invert_T_B_D", &T_B_D_);
     getTransformationParam(*node_, "T_B_C", "invert_T_B_C", &T_B_C_);
   }
-  T_D_C_ = T_B_D_.inverse() * T_B_C_;
   // Or we will use tf_transform, we do not need the calibration parameters
   // lookupTransformTf
   // Model transformation
@@ -73,8 +77,22 @@ bool Transformer::lookupTransform(
   if (use_tf_transforms_) {
     return lookupTransformTf(from_frame, to_frame, timestamp, transform);
   } else {
-    return lookupTransformQueue(timestamp, transform);
+    // Single-sensor callers get exactly today's behavior: the global
+    // T_B_C_ (MULTI_SENSOR_PLAN.md M6).
+    return lookupTransformQueue(timestamp, T_B_C_, transform);
   }
+}
+
+bool Transformer::lookupSensorTransform(
+    const std::string& frame, const Transformation* T_B_C_or_null,
+    const rclcpp::Time& stamp, Transformation* T_G_C) {
+  CHECK_NOTNULL(T_G_C);
+  if (use_tf_transforms_) {
+    return lookupTransformTf(frame, world_frame_, stamp, T_G_C);
+  }
+  const Transformation& T_B_C =
+      T_B_C_or_null != nullptr ? *T_B_C_or_null : T_B_C_;
+  return lookupTransformQueue(stamp, T_B_C, T_G_C);
 }
 
 // Stolen from octomap_manager
@@ -83,22 +101,15 @@ bool Transformer::lookupTransformTf(
     const rclcpp::Time& timestamp, Transformation* transform) {
   CHECK_NOTNULL(transform);
 
-  // Allow overwriting the TF frame for the sensor.
-  std::string from_frame_modified = from_frame;
-  if (!sensor_frame_.empty()) {
-    from_frame_modified = sensor_frame_;
-  }
-
   // Previous behavior was just to use the latest transform if the time is in
   // the future. Now we will just wait.
-  if (!tf_buffer_->canTransform(to_frame, from_frame_modified, timestamp)) {
+  if (!tf_buffer_->canTransform(to_frame, from_frame, timestamp)) {
     return false;
   }
 
   geometry_msgs::msg::TransformStamped tf_transform;
   try {
-    tf_transform =
-        tf_buffer_->lookupTransform(to_frame, from_frame_modified, timestamp);
+    tf_transform = tf_buffer_->lookupTransform(to_frame, from_frame, timestamp);
   } catch (tf2::TransformException& ex) {  // NOLINT
     RCLCPP_ERROR_STREAM(
         node_->get_logger(),
@@ -111,8 +122,9 @@ bool Transformer::lookupTransformTf(
 }
 
 bool Transformer::lookupTransformQueue(
-    const rclcpp::Time& timestamp, Transformation* transform) {
-  CHECK_NOTNULL(transform);
+    const rclcpp::Time& timestamp, const Transformation& T_B_C,
+    Transformation* T_G_C) {
+  CHECK_NOTNULL(T_G_C);
   if (transform_queue_.empty()) {
     RCLCPP_WARN_STREAM_THROTTLE(
         node_->get_logger(), *node_->get_clock(), 30000,
@@ -187,12 +199,33 @@ bool Transformer::lookupTransformQueue(
 
   // If we have a static transform, apply it too.
   // Transform should actually be T_G_C. So need to take it through the full
-  // chain. transform is T_G_C
-  *transform = T_G_D * T_D_C_;
+  // chain. transform is T_G_C. T_B_D stays global; T_B_C is per call
+  // (MULTI_SENSOR_PLAN.md M6).
+  const Transformation T_D_C = T_B_D_.inverse() * T_B_C;
+  *T_G_C = T_G_D * T_D_C;
 
-  // And also clear the queue up to this point. This leaves the current
-  // message in place.
-  transform_queue_.erase(transform_queue_.begin(), it);
+  // MULTI_SENSOR_PLAN.md A8/M6: erase entries older than the retention
+  // window, not "everything before this lookup's bracket" -- with >1
+  // sensor, a cloud stamped slightly earlier than one already processed
+  // would otherwise find its bracketing poses already erased. Single-sensor
+  // output is unaffected except when two consecutive clouds are stamped
+  // closer together than timestamp_tolerance_sec (1 ms default): see
+  // docs/MULTI_SENSOR_NOTES.md.
+  const int64_t retention_ns =
+      static_cast<int64_t>(transform_queue_retention_sec_ * 1.0e9);
+  const int64_t cutoff_ns = timestamp.nanoseconds() - retention_ns;
+  while (!transform_queue_.empty()) {
+    const rclcpp::Time front_stamp(
+        transform_queue_.front().header.stamp, RCL_ROS_TIME);
+    if (front_stamp.nanoseconds() >= cutoff_ns) {
+      break;
+    }
+    transform_queue_.pop_front();
+  }
+  constexpr size_t kMaxQueueSize = 10000;
+  while (transform_queue_.size() > kMaxQueueSize) {
+    transform_queue_.pop_front();
+  }
   return true;
 }
 

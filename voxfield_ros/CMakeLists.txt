@@ -158,6 +158,11 @@ if(BUILD_TESTING)
     SKIP_LINKING_MAIN_LIBRARIES)
   target_link_libraries(test_kindr_conversions ${PROJECT_NAME} gtest)
 
+  # Transformer multi-sensor support (MULTI_SENSOR_PLAN.md Phase 3, M5/M6).
+  ament_add_gtest(test_transformer_multi test/test_transformer_multi.cc
+    SKIP_LINKING_MAIN_LIBRARIES)
+  target_link_libraries(test_transformer_multi ${PROJECT_NAME} gtest)
+
   # NpTsdfServer range-image preprocessing regressions ("Known upstream
   # issues" #1-#3 in docs/ROS2_PORT_NOTES.md).
   ament_add_gtest(test_np_tsdf_server test/test_np_tsdf_server.cc
