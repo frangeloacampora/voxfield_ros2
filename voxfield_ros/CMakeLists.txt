@@ -175,6 +175,23 @@ if(BUILD_TESTING)
   target_compile_definitions(test_voxblox_server_map_io PRIVATE
     TEST_VOXBLOX_SERVER)
 
+  # Golden regression tests pinning today's (legacy, single-sensor) TSDF
+  # integration output, added before the multi-sensor refactor begins
+  # (MULTI_SENSOR_PLAN.md Phase 1). Same TsdfServer/NpTsdfServer-can't-share-
+  # a-translation-unit split as test_server_map_io above.
+  ament_add_gtest(test_legacy_golden_tsdf test/test_legacy_golden.cc
+    SKIP_LINKING_MAIN_LIBRARIES)
+  target_link_libraries(test_legacy_golden_tsdf ${PROJECT_NAME} gtest)
+  target_compile_definitions(test_legacy_golden_tsdf PRIVATE
+    VOXFIELD_ROS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/test_data")
+
+  ament_add_gtest(test_legacy_golden_np_tsdf test/test_legacy_golden.cc
+    SKIP_LINKING_MAIN_LIBRARIES)
+  target_link_libraries(test_legacy_golden_np_tsdf ${PROJECT_NAME} gtest)
+  target_compile_definitions(test_legacy_golden_np_tsdf PRIVATE
+    TEST_NP_TSDF_SERVER
+    VOXFIELD_ROS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/test_data")
+
   # Dataset-free smoke test (plan §6 Phase 12 step 1): one launch_test per
   # server executable, sharing test/test_smoke.launch.py via the `method`
   # launch argument. voxfield gets the full mesh/slice/save+load check;
