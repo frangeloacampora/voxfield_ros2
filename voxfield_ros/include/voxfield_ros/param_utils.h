@@ -90,6 +90,21 @@ T getParam(
             name.c_str(), rclcpp::to_string(value.get_type()).c_str());
         return default_value;
     }
+  } else if constexpr (std::is_same_v<T, std::vector<std::string>>) {
+    rclcpp::ParameterValue value =
+        declareAndGet(node, name, rclcpp::ParameterValue(default_value));
+    switch (value.get_type()) {
+      case rclcpp::ParameterType::PARAMETER_NOT_SET:
+        return default_value;
+      case rclcpp::ParameterType::PARAMETER_STRING_ARRAY:
+        return value.get<std::vector<std::string>>();
+      default:
+        RCLCPP_ERROR(
+            node.get_logger(),
+            "Parameter '%s': expected a string array, got %s; using default",
+            name.c_str(), rclcpp::to_string(value.get_type()).c_str());
+        return default_value;
+    }
   } else if constexpr (std::is_floating_point_v<T>) {
     // float and FloatingPoint targets go through double.
     rclcpp::ParameterValue value = declareAndGet(
@@ -189,6 +204,25 @@ inline bool getTransformationParam(
   const bool invert = getParam<bool>(node, invert_name, false);
   *T_out = invert ? transformation.inverse() : transformation;
   return true;
+}
+
+// Returns the names of every declared parameter override (set via
+// NodeOptions::parameter_overrides() or a --params-file) whose name starts
+// with `prefix` -- e.g. listParameterOverrides(node, "sensors.") to find
+// every "sensors.<name>.<key>" a multi-sensor config set, without
+// individually declaring each whitelisted key up front (MULTI_SENSOR_PLAN.md
+// M2/M13).
+inline std::vector<std::string> listParameterOverrides(
+    rclcpp::Node& node, const std::string& prefix) {
+  std::vector<std::string> names;
+  const auto& overrides =
+      node.get_node_parameters_interface()->get_parameter_overrides();
+  for (const auto& entry : overrides) {
+    if (entry.first.compare(0, prefix.size(), prefix) == 0) {
+      names.push_back(entry.first);
+    }
+  }
+  return names;
 }
 
 }  // namespace voxfield

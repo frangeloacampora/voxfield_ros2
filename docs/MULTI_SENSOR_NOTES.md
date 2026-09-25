@@ -102,3 +102,61 @@ gtest binaries, each counted once in the per-file breakdown and once in
 CTest's own `Testing/Test.xml` aggregate — consistent with how the Phase 0
 baseline was already being counted, not a new double-count). The same 4
 pre-existing skips, unaffected.
+
+## Phase 2: Pure refactor — extract `RangeImageProjector`, add string-array params
+
+No behavior change; `test_legacy_golden_{tsdf,np_tsdf}` stay exact
+throughout, and `git status` after this phase touches only `voxfield_ros`
+C++/CMake/test files — no `.yaml`, launch file, or core-library (`voxfield/`)
+change.
+
+**`RangeImageProjector`** (`include/voxfield_ros/range_image_projector.h` +
+`src/range_image_projector.cc`, new): `projectPointCloudToImage`,
+`projectPointToImageLiDAR`, `projectPointToImageCamera`,
+`computeNormalImage`, `extractPointCloud`, `extractNormals`, and
+`extractColors` moved out of `NpTsdfServer` verbatim (member fields like
+`width_`/`sensor_is_lidar_` became `config_.width`/`config_.sensor_is_lidar`;
+every ROS2_PORT-deviation comment moved with its code). Added a `process()`
+convenience method matching the inline pipeline that used to live in
+`NpTsdfServer::processPointCloudMessageAndInsert()`, and a `Config::isValid()`
+per M8's contract (width/height positive; camera needs `fx,fy > 0`; LiDAR
+needs `fov_up != fov_down`) — unused until Phase 4's fail-fast validation,
+but part of the class's contract from the start per the plan.
+
+**`NpTsdfServer`** now owns one `std::unique_ptr<RangeImageProjector>
+projector_` (still a single member at this stage — the `sensors_` vector
+doesn't exist until Phase 4/5), built at the end of
+`getServerConfigFromRosParam()` from the same params it already read.
+`processPointCloudMessageAndInsert()`'s inline range-image block collapsed
+to one `projector_->process(...)` call. The seven public methods
+(`projectPointCloudToImage()` etc.) are now one-line wrappers delegating to
+`projector_`, signatures byte-for-byte unchanged — `test_np_tsdf_server.cc`
+required **zero** edits and still passes.
+
+**`param_utils.h`:** added a `std::vector<std::string>` branch to
+`getParam<T>()` (accepts `PARAMETER_STRING_ARRAY`, falls back to the default
+on `PARAMETER_NOT_SET` or a type mismatch, matching every other branch's
+pattern) and `listParameterOverrides(node, prefix)` (linear scan of
+`get_parameter_overrides()` for keys starting with `prefix`) — both needed
+by Phase 4's `sensor_names`/`sensors.<name>.*` parsing, added now per the
+plan. 5 new `test_param_utils.cc` cases cover both.
+
+**`test/test_range_image_projector.cc`** (new): the 8 `test_np_tsdf_server.cc`
+camera-model cases ported 1:1 to call `RangeImageProjector` directly (no ROS
+node needed — the class has no ROS dependency, so this target links the
+default `gtest_main`, unlike every other test in this package), plus a new
+LiDAR cylinder round-trip case. First attempt at the round-trip case
+generated points via a plain `linspace`-style row/col → elevation/azimuth
+mapping (like `scripts/fake_sensor_publisher.py`'s, a *different* generator)
+and failed: `projectPointToImageLiDAR`'s actual `yaw`/`pitch` →
+`proj_x`/`proj_y` formula has a different pixel-to-angle convention (e.g.
+azimuth 0 lands at column `width/2`, not column 0). Fixed by generating
+points from the exact algebraic inverse of that formula instead
+(`yaw = π·(2·col/width − 1)`, `pitch = fov_down_rad + fov_rad·(1 − row/height)`),
+which now round-trips every point in the test to <1e-5 of its original
+position.
+
+**Full suite after Phase 2:** `Summary: 119 tests, 0 errors, 0 failures, 4
+skipped` (104 + 9 new `test_range_image_projector` cases + 1 new CTest
+aggregate entry + 5 new `test_param_utils` cases). Same 4 pre-existing
+skips.

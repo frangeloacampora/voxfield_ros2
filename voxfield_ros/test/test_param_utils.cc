@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
 
+#include <algorithm>
+
 #include "voxfield_ros/param_utils.h"
 
 namespace voxfield {
@@ -117,6 +119,55 @@ TEST(ParamUtils, TransformationParamWrongSizeReturnsFalse) {
   Transformation T;
   T.setIdentity();
   EXPECT_FALSE(getTransformationParam(*node, "T_B_C", "invert_T_B_C", &T));
+}
+
+TEST(ParamUtils, StringArrayMissingReturnsDefault) {
+  auto node = makeNode("test_string_array_missing");
+  const std::vector<std::string> default_value = {"a", "b"};
+  EXPECT_EQ(
+      getParam<std::vector<std::string>>(*node, "not_set", default_value),
+      default_value);
+}
+
+TEST(ParamUtils, StringArrayOverride) {
+  auto node = makeNode(
+      "test_string_array_override",
+      {rclcpp::Parameter(
+          "sensor_names", std::vector<std::string>{"front_lidar",
+                                                     "back_lidar"})});
+  const std::vector<std::string> names =
+      getParam<std::vector<std::string>>(*node, "sensor_names", {});
+  ASSERT_EQ(names.size(), 2u);
+  EXPECT_EQ(names[0], "front_lidar");
+  EXPECT_EQ(names[1], "back_lidar");
+}
+
+TEST(ParamUtils, StringArrayWrongTypeFallsBackToDefault) {
+  auto node =
+      makeNode("test_string_array_wrong_type", {rclcpp::Parameter("x", 1.5)});
+  const std::vector<std::string> default_value = {"fallback"};
+  EXPECT_EQ(
+      getParam<std::vector<std::string>>(*node, "x", default_value),
+      default_value);
+}
+
+TEST(ParamUtils, ListParameterOverridesFindsPrefixedKeysOnly) {
+  auto node = makeNode(
+      "test_list_overrides",
+      {rclcpp::Parameter("sensors.front_lidar.topic", "front"),
+       rclcpp::Parameter("sensors.back_lidar.topic", "back"),
+       rclcpp::Parameter("world_frame", "map")});
+  std::vector<std::string> names = listParameterOverrides(*node, "sensors.");
+  std::sort(names.begin(), names.end());
+  ASSERT_EQ(names.size(), 2u);
+  EXPECT_EQ(names[0], "sensors.back_lidar.topic");
+  EXPECT_EQ(names[1], "sensors.front_lidar.topic");
+}
+
+TEST(ParamUtils, ListParameterOverridesEmptyWhenNoneMatch) {
+  auto node = makeNode(
+      "test_list_overrides_empty", {rclcpp::Parameter("world_frame", "map")});
+  EXPECT_TRUE(listParameterOverrides(*node, "sensors.").empty());
 }
 
 TEST(ParamUtils, EurocCalibTransformsLoadFromYaml) {

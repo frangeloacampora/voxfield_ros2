@@ -28,6 +28,7 @@
 
 #include "voxfield_ros/mesh_vis.h"
 #include "voxfield_ros/ptcloud_vis.h"
+#include "voxfield_ros/range_image_projector.h"
 #include "voxfield_ros/transformer.h"
 
 namespace voxfield {
@@ -144,7 +145,9 @@ class NpTsdfServer {
   // Visualize the robot model in the map
   void publishRobotMesh(const Transformation& T_G_C);
 
-  /// Preprocessing
+  /// Preprocessing. Thin wrappers delegating to `projector_`
+  /// (MULTI_SENSOR_PLAN.md M8/Phase 2), kept with their original signatures
+  /// so existing callers (test_np_tsdf_server.cc) are unchanged.
   // from point cloud to range image
   bool projectPointCloudToImage(
       const Pointcloud& points_C, const Colors& colors,
@@ -311,6 +314,10 @@ class NpTsdfServer {
   // Maps and integrators.
   std::shared_ptr<TsdfMap> tsdf_map_;
   std::unique_ptr<NpTsdfIntegratorBase> tsdf_integrator_;
+
+  /// Range-image projection model, built from the sensor-model params below
+  /// at the end of getServerConfigFromRosParam() (MULTI_SENSOR_PLAN.md M8).
+  std::unique_ptr<RangeImageProjector> projector_;
 
   /// ICP matcher
   std::shared_ptr<ICP> icp_;

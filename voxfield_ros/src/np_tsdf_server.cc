@@ -237,6 +237,21 @@ void NpTsdfServer::getServerConfigFromRosParam() {
         width_, height_);
   }
 
+  RangeImageProjector::Config projector_config;
+  projector_config.sensor_is_lidar = sensor_is_lidar_;
+  projector_config.width = width_;
+  projector_config.height = height_;
+  projector_config.fov_up = fov_up_;
+  projector_config.fov_down = fov_down_;
+  projector_config.vx = vx_;
+  projector_config.vy = vy_;
+  projector_config.fx = fx_;
+  projector_config.fy = fy_;
+  projector_config.smooth_thre_ratio = smooth_thre_ratio_;
+  projector_config.min_z = min_z_;
+  projector_config.min_dist = min_dist_;
+  projector_.reset(new RangeImageProjector(projector_config));
+
   // Robot model related
   param(*node_, "publish_robot_model", publish_robot_model_);
   param(*node_, "robot_model_file", robot_model_file_);
@@ -329,19 +344,9 @@ void NpTsdfServer::processPointCloudMessageAndInsert(
 
   // calculate point-wise normal
   timing::Timer range_pre_timer("preprocess/normal_estimation");
-  // Preprocess the point cloud: convert to range images
-  cv::Mat vertex_map = cv::Mat::zeros(height_, width_, CV_32FC3);
-  cv::Mat depth_image(vertex_map.size(), CV_32FC1, -1.0);
-  cv::Mat color_image = cv::Mat::zeros(vertex_map.size(), CV_8UC3);
-  projectPointCloudToImage(
-      points_C, colors, vertex_map, depth_image, color_image, min_z_,
-      min_dist_);
-  cv::Mat normal_image = computeNormalImage(vertex_map, depth_image);
-  // Back project to point cloud from range images
-  points_C = extractPointCloud(vertex_map, depth_image);
-  normals_C = extractNormals(normal_image, depth_image);
-  colors = extractColors(color_image, depth_image);
-
+  // Preprocess the point cloud: project to a range image, compute normals,
+  // and back-project to a point cloud.
+  projector_->process(points_C, colors, &points_C, &normals_C, &colors);
   range_pre_timer.Stop();
 
   // ICP based pose refinement
@@ -832,226 +837,46 @@ void NpTsdfServer::tsdfMapCallback(
   }
 }
 
+// Thin wrappers delegating to projector_ (MULTI_SENSOR_PLAN.md M8/Phase 2).
+// The actual implementations, verbatim, now live in RangeImageProjector
+// (range_image_projector.cc).
 bool NpTsdfServer::projectPointCloudToImage(
     const Pointcloud& points_C, const Colors& colors,
-    cv::Mat& vertex_map,   // corresponding point // NOLINT
-    cv::Mat& depth_image,  // Float depth image (CV_32FC1). // NOLINT
+    cv::Mat& vertex_map,   // NOLINT
+    cv::Mat& depth_image,  // NOLINT
     cv::Mat& color_image, float min_z, float min_d) const {
-  // TODO(py): consider to calculate in parallel to speed up
-  for (size_t i = 0; i < points_C.size(); i++) {
-    int u, v;
-    float depth;
-    if (sensor_is_lidar_)
-      depth = projectPointToImageLiDAR(points_C[i], &u, &v);
-    else
-      depth = projectPointToImageCamera(points_C[i], &u, &v);
-    if (depth > min_d && points_C[i].z() > min_z) {
-      float old_depth = depth_image.at<float>(v, u);
-      // save only nearest point for each pixel
-      if (old_depth <= 0.0 || old_depth > depth) {
-        for (int k = 0; k <= 2; k++) {
-          vertex_map.at<cv::Vec3f>(v, u)[k] = points_C[i](k);
-        }
-        depth_image.at<float>(v, u) = depth;
-        // BGR default order
-        color_image.at<cv::Vec3b>(v, u)[0] = colors[i].b;
-        color_image.at<cv::Vec3b>(v, u)[1] = colors[i].g;
-        color_image.at<cv::Vec3b>(v, u)[2] = colors[i].r;
-      }
-    }
-  }
-  return false;
+  return projector_->projectPointCloudToImage(
+      points_C, colors, vertex_map, depth_image, color_image, min_z, min_d);
 }
 
-// point should be in the LiDAR's coordinate system
 float NpTsdfServer::projectPointToImageLiDAR(
     const Point& p_C, int* u, int* v) const {
-  // All values are ceiled and floored to guarantee that the resulting points
-  // will be valid for any integer conversion.
-  float depth =
-      std::sqrt(p_C.x() * p_C.x() + p_C.y() * p_C.y() + p_C.z() * p_C.z());
-  float yaw = std::atan2(p_C.y(), p_C.x());
-  float pitch = std::asin(p_C.z() / depth);
-  // projections in image coordinates (percentage)
-  float proj_x = 0.5 * (yaw / M_PI + 1.0);
-  float proj_y = 1.0 - (pitch - fov_down_rad_) / fov_rad_;
-  // scale to image size
-  proj_x *= width_;
-  proj_y *= height_;
-  // round for integer index
-  CHECK_NOTNULL(u);
-  *u = std::round(proj_x);
-  if (*u == width_)
-    *u = 0;
-
-  CHECK_NOTNULL(v);
-  *v = std::round(proj_y);
-  if (std::ceil(proj_y) > height_ - 1 || std::floor(proj_y) < 0) {
-    return (-1.0);
-  }
-  return depth;
+  return projector_->projectPointToImageLiDAR(p_C, u, v);
 }
 
-// ROS2_PORT deviation (docs/ROS2_PORT_NOTES.md "Known upstream issues" #2):
-// upstream returned `bool` (in bounds or not) into the caller's `float
-// depth`, so every in-image camera point got depth 1.0 and
-// projectPointCloudToImage() kept the *first* point per pixel instead of the
-// nearest one, and computeNormalImage()'s depth-discontinuity check never
-// fired. This now returns the real range, like projectPointToImageLiDAR(),
-// and -1 (always rejected by the caller's `depth > min_d`) for points that
-// don't project into the image. Points behind the camera (z <= 0) and
-// non-finite points are rejected too: upstream projected them through the
-// pinhole model anyway (mirrored into the image, or an undefined
-// float -> int conversion).
 float NpTsdfServer::projectPointToImageCamera(
     const Point& p_C, int* u, int* v) const {
-  CHECK_NOTNULL(u);
-  CHECK_NOTNULL(v);
-  if (!(p_C.z() > 0.0f)) {  // also catches NaN
-    return -1.0f;
-  }
-  const float proj_u = p_C.x() * fx_ / p_C.z() + vx_;
-  const float proj_v = p_C.y() * fy_ / p_C.z() + vy_;
-  // std::round() rounds halfway cases away from zero, so round(-0.5) == -1,
-  // not 0: the lower bound below must be an open one (unlike every other
-  // integer boundary, which rounds towards +infinity on a tie). Checked on
-  // the float before converting so out-of-range or non-finite values never
-  // reach the float -> int conversion.
-  if (!(proj_u > -0.5f && proj_u < width_ - 0.5f) ||
-      !(proj_v > -0.5f && proj_v < height_ - 0.5f)) {
-    return -1.0f;
-  }
-  *u = static_cast<int>(std::round(proj_u));
-  *v = static_cast<int>(std::round(proj_v));
-  return p_C.norm();
+  return projector_->projectPointToImageCamera(p_C, u, v);
 }
 
 cv::Mat NpTsdfServer::computeNormalImage(
     const cv::Mat& vertex_map, const cv::Mat& depth_image) const {
-  cv::Mat normal_image(depth_image.size(), CV_32FC3, 0.0);
-  // Every normal needs a neighboring column and row.
-  if (width_ < 2 || height_ < 2) {
-    return normal_image;
-  }
-  for (int u = 0; u < width_; u++) {
-    for (int v = 0; v < height_; v++) {
-      Point p;
-      p << vertex_map.at<cv::Vec3f>(v, u)[0], vertex_map.at<cv::Vec3f>(v, u)[1],
-          vertex_map.at<cv::Vec3f>(v, u)[2];
-
-      float d_p = depth_image.at<float>(v, u);
-      // sign of the normal vector
-      float sign = 1.0;
-
-      if (d_p > 0) {
-        // neighbor x: the next column. A LiDAR range image is a 360-degree
-        // ring, so its last column wraps to column 0. A camera image does
-        // not wrap: use the previous column and flip the normal's sign
-        // instead (ROS2_PORT deviation, see the row case below).
-        int n_x_u;
-        if (u == width_ - 1) {
-          if (sensor_is_lidar_) {
-            n_x_u = 0;
-          } else {
-            n_x_u = u - 1;
-            sign *= -1.0;
-          }
-        } else {
-          n_x_u = u + 1;
-        }
-        Point n_x;
-        n_x << vertex_map.at<cv::Vec3f>(v, n_x_u)[0],
-            vertex_map.at<cv::Vec3f>(v, n_x_u)[1],
-            vertex_map.at<cv::Vec3f>(v, n_x_u)[2];
-        float d_n_x = depth_image.at<float>(v, n_x_u);
-        if (d_n_x < 0)
-          continue;
-        // on the boundary, not continous
-        if (std::abs(d_n_x - d_p) > smooth_thre_ratio_ * d_p)
-          continue;
-
-        // neighbor y: the next row; the last row uses the previous row and
-        // flips the normal's sign (dy then points the other way).
-        // ROS2_PORT deviation (docs/ROS2_PORT_NOTES.md "Known upstream
-        // issues" #1): upstream tested `v == height_`, which can never be
-        // true inside `for (v = 0; v < height_; ...)`, so the last row read
-        // one row past the end of vertex_map/depth_image.
-        int n_y_v;
-        if (v == height_ - 1) {
-          n_y_v = v - 1;
-          sign *= -1.0;
-        } else {
-          n_y_v = v + 1;
-        }
-        Point n_y;
-        n_y << vertex_map.at<cv::Vec3f>(n_y_v, u)[0],
-            vertex_map.at<cv::Vec3f>(n_y_v, u)[1],
-            vertex_map.at<cv::Vec3f>(n_y_v, u)[2];
-
-        float d_n_y = depth_image.at<float>(n_y_v, u);
-        if (d_n_y < 0)
-          continue;
-        // on the boundary, not continous
-        if (std::abs(d_n_y - d_p) > smooth_thre_ratio_ * d_p)
-          continue;
-        Point dx = n_x - p;
-        Point dy = n_y - p;
-
-        Point normal = (dx.cross(dy)).normalized() * sign;
-        cv::Vec3f& normals = normal_image.at<cv::Vec3f>(v, u);
-        for (int k = 0; k <= 2; k++)
-          normals[k] = normal(k);
-      }
-    }
-  }
-  return normal_image;
+  return projector_->computeNormalImage(vertex_map, depth_image);
 }
 
 Pointcloud NpTsdfServer::extractPointCloud(
     const cv::Mat& vertex_map, const cv::Mat& depth_image) const {
-  Pointcloud points_C;
-  for (int v = 0; v < vertex_map.rows; v++) {
-    for (int u = 0; u < vertex_map.cols; u++) {
-      cv::Vec3f vertex = vertex_map.at<cv::Vec3f>(v, u);
-      if (depth_image.at<float>(v, u) > 0) {
-        Point p_C(vertex[0], vertex[1], vertex[2]);
-        points_C.push_back(p_C);
-      }
-    }
-  }
-  return points_C;
+  return projector_->extractPointCloud(vertex_map, depth_image);
 }
 
 Colors NpTsdfServer::extractColors(
     const cv::Mat& color_image, const cv::Mat& depth_image) const {
-  Colors colors;
-  for (int v = 0; v < color_image.rows; v++) {
-    for (int u = 0; u < color_image.cols; u++) {
-      // BGR
-      cv::Vec3b color = color_image.at<cv::Vec3b>(v, u);
-      if (depth_image.at<float>(v, u) > 0) {
-        // RGB
-        Color c_C(color[2], color[1], color[0]);
-        colors.push_back(c_C);
-      }
-    }
-  }
-  return colors;
+  return projector_->extractColors(color_image, depth_image);
 }
 
 Pointcloud NpTsdfServer::extractNormals(
     const cv::Mat& normal_image, const cv::Mat& depth_image) const {
-  Pointcloud normals_C;
-  for (int v = 0; v < normal_image.rows; v++) {
-    for (int u = 0; u < normal_image.cols; u++) {
-      cv::Vec3f vertex = normal_image.at<cv::Vec3f>(v, u);
-      if (depth_image.at<float>(v, u) > 0) {
-        Ray n_C(vertex[0], vertex[1], vertex[2]);
-        normals_C.push_back(n_C);
-      }
-    }
-  }
-  return normals_C;
+  return projector_->extractNormals(normal_image, depth_image);
 }
 
 }  // namespace voxfield

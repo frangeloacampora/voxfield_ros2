@@ -67,6 +67,7 @@ set(VOXFIELD_ROS_DEPENDENCIES
 add_library(${PROJECT_NAME}
   src/interactive_slider.cc
   src/transformer.cc
+  src/range_image_projector.cc
   src/tsdf_server.cc
   src/np_tsdf_server.cc
   src/voxfield_server.cc
@@ -162,6 +163,12 @@ if(BUILD_TESTING)
   ament_add_gtest(test_np_tsdf_server test/test_np_tsdf_server.cc
     SKIP_LINKING_MAIN_LIBRARIES)
   target_link_libraries(test_np_tsdf_server ${PROJECT_NAME} gtest)
+
+  # Direct RangeImageProjector unit tests (MULTI_SENSOR_PLAN.md M8/Phase 2).
+  # No ROS node needed, so this links the default gtest_main.
+  ament_add_gtest(
+    test_range_image_projector test/test_range_image_projector.cc)
+  target_link_libraries(test_range_image_projector ${PROJECT_NAME} gtest)
 
   # save_map/load_map/save_esdf_map file handling ("Known upstream issues"
   # #11).
