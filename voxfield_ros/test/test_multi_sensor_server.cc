@@ -1,10 +1,17 @@
-// Unit tests for TsdfServer's multi-sensor frontend (MULTI_SENSOR_PLAN.md
-// Phase 5): sensor equivalence, per-sensor extrinsics/ray limits/throttle,
-// and the M11 ICP guard.
+// Unit tests for TsdfServer's and NpTsdfServer's multi-sensor frontends
+// (MULTI_SENSOR_PLAN.md Phase 5/6): sensor equivalence, per-sensor
+// extrinsics/ray limits/throttle, the M11 ICP guard, and (NP only) a mixed
+// LiDAR+camera sensor pair and M13's fail-fast projector validation.
+//
+// TsdfServer and NpTsdfServer can't be included in the same translation
+// unit (both define voxfield::kDefaultMaxIntensity), so CMake builds this
+// file twice, once per server, with TEST_NP_TSDF_SERVER on/off -- the same
+// pattern as test_legacy_golden.cc's.
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -15,7 +22,14 @@
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 
 #include "voxfield_ros/kindr_conversions.h"
+
+#ifdef TEST_NP_TSDF_SERVER
+#include "voxfield_ros/np_tsdf_server.h"
+#define TEST_SERVER NpTsdfServer
+#else
 #include "voxfield_ros/tsdf_server.h"
+#define TEST_SERVER TsdfServer
+#endif
 
 namespace voxfield {
 namespace {
@@ -122,13 +136,13 @@ sensor_msgs::msg::PointCloud2::SharedPtr makeCloudMsg(
 }
 
 // Exposes the protected members the tests need to reach directly.
-class TestServer : public TsdfServer {
+class TestServer : public TEST_SERVER {
  public:
-  explicit TestServer(rclcpp::Node::SharedPtr node) : TsdfServer(node) {}
-  using TsdfServer::enable_icp_;
-  using TsdfServer::icp_transform_pub_;
-  using TsdfServer::sensors_;
-  using TsdfServer::transformer_;
+  explicit TestServer(rclcpp::Node::SharedPtr node) : TEST_SERVER(node) {}
+  using TEST_SERVER::enable_icp_;
+  using TEST_SERVER::icp_transform_pub_;
+  using TEST_SERVER::sensors_;
+  using TEST_SERVER::transformer_;
 };
 
 void pushTransform(
@@ -166,9 +180,13 @@ std::vector<rclcpp::Parameter> commonParams() {
   };
 }
 
-rclcpp::Node::SharedPtr makeLegacyNode(const std::string& name) {
+rclcpp::Node::SharedPtr makeLegacyNode(
+    const std::string& name,
+    std::vector<rclcpp::Parameter> extra_params = {}) {
   rclcpp::NodeOptions options;
-  options.parameter_overrides(commonParams());
+  std::vector<rclcpp::Parameter> params = commonParams();
+  params.insert(params.end(), extra_params.begin(), extra_params.end());
+  options.parameter_overrides(params);
   return std::make_shared<rclcpp::Node>(name, options);
 }
 
@@ -206,6 +224,8 @@ void CompareLayersExact(
     }
   }
 }
+
+#ifndef TEST_NP_TSDF_SERVER
 
 // ---- Equivalence: identical multi-sensor sensors == a legacy sensor ----
 
@@ -414,6 +434,194 @@ TEST(MultiSensorServer, IcpIsDisabledWithMultipleSensors) {
   EXPECT_FALSE(server.enable_icp_);
   EXPECT_EQ(server.icp_transform_pub_, nullptr);
 }
+
+#else  // TEST_NP_TSDF_SERVER
+
+// ---- NP equivalence: identical multi-sensor sensors == a legacy sensor ----
+
+TEST(MultiSensorServerNp, AlternatingIdenticalSensorsMatchLegacy) {
+  // Top-level sensor-model params (LiDAR, 256x16, fov 3/-25 deg): legacy
+  // mode's "default" sensor and multi-sensor mode's un-overridden 'a'/'b'
+  // both inherit these identically.
+  const std::vector<rclcpp::Parameter> np_sensor_model = {
+      rclcpp::Parameter("sensor_is_lidar", true),
+      rclcpp::Parameter("width", 256), rclcpp::Parameter("height", 16),
+      rclcpp::Parameter("fov_up", 3.0), rclcpp::Parameter("fov_down", -25.0)};
+
+  auto legacy_node = makeLegacyNode("np_equivalence_legacy", np_sensor_model);
+  TestServer legacy_server(legacy_node);
+
+  std::vector<rclcpp::Parameter> multi_params = np_sensor_model;
+  multi_params.push_back(rclcpp::Parameter(
+      "sensor_names", std::vector<std::string>{"a", "b"}));
+  multi_params.push_back(rclcpp::Parameter("sensors.a.topic", "a_pointcloud"));
+  multi_params.push_back(rclcpp::Parameter("sensors.b.topic", "b_pointcloud"));
+  auto multi_node = makeMultiSensorNode("np_equivalence_multi", multi_params);
+  TestServer multi_server(multi_node);
+  ASSERT_EQ(multi_server.sensors_.size(), 2u);
+
+  const BoxRoomLidar lidar(256, 16, 3.0, -25.0);
+  constexpr int kNumFrames = 20;
+  constexpr int64_t kFrameStepNs = 100000000LL;
+  constexpr int64_t kHalfBracketNs = 5000000LL;
+  constexpr int64_t kBaseNs = 1000000000LL;
+
+  for (int i = 0; i < kNumFrames; ++i) {
+    const int64_t frame_ns = kBaseNs + static_cast<int64_t>(i) * kFrameStepNs;
+    const int64_t minus_ns = frame_ns - kHalfBracketNs;
+    const int64_t plus_ns = frame_ns + kHalfBracketNs;
+
+    Eigen::Vector3d position;
+    double yaw;
+    lidar.sensorPose(static_cast<double>(minus_ns) * 1e-9, &position, &yaw);
+    const Transformation T_minus(
+        Transformation::Position(position.x(), position.y(), position.z()),
+        Transformation::Rotation(Eigen::Quaterniond(
+            Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()))
+                                      .cast<float>()));
+    lidar.sensorPose(static_cast<double>(plus_ns) * 1e-9, &position, &yaw);
+    const Transformation T_plus(
+        Transformation::Position(position.x(), position.y(), position.z()),
+        Transformation::Rotation(Eigen::Quaterniond(
+            Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()))
+                                      .cast<float>()));
+
+    pushTransform(&legacy_server, T_minus, minus_ns, "map");
+    pushTransform(&legacy_server, T_plus, plus_ns, "map");
+    pushTransform(&multi_server, T_minus, minus_ns, "map");
+    pushTransform(&multi_server, T_plus, plus_ns, "map");
+
+    lidar.sensorPose(static_cast<double>(frame_ns) * 1e-9, &position, &yaw);
+    const std::vector<Eigen::Vector3f> points = lidar.raycast(position, yaw);
+    const auto legacy_msg = makeCloudMsg(
+        points, rclcpp::Time(frame_ns, RCL_ROS_TIME), "lidar");
+    const auto multi_msg = makeCloudMsg(
+        points, rclcpp::Time(frame_ns, RCL_ROS_TIME), "lidar");
+
+    legacy_server.insertPointcloud(legacy_msg);
+    multi_server.insertPointcloud(
+        multi_msg, multi_server.sensors_[i % 2].get());
+  }
+
+  CompareLayersExact(
+      legacy_server.getTsdfMapPtr()->getTsdfLayer(),
+      multi_server.getTsdfMapPtr()->getTsdfLayer());
+}
+
+// ---- Mixed LiDAR + camera sensors, each with its own projector (M8) ----
+
+TEST(MultiSensorServerNp, MixedLidarAndCameraSensorsBothIntegrate) {
+  auto node = makeMultiSensorNode(
+      "np_mixed_lidar_camera",
+      {rclcpp::Parameter(
+           "sensor_names", std::vector<std::string>{"a", "b"}),
+       rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
+       rclcpp::Parameter("sensors.a.sensor_is_lidar", true),
+       rclcpp::Parameter("sensors.a.width", 256),
+       rclcpp::Parameter("sensors.a.height", 16),
+       rclcpp::Parameter("sensors.a.fov_up", 3.0),
+       rclcpp::Parameter("sensors.a.fov_down", -25.0),
+       rclcpp::Parameter("sensors.b.topic", "b_pointcloud"),
+       rclcpp::Parameter("sensors.b.sensor_is_lidar", false),
+       rclcpp::Parameter("sensors.b.width", 640),
+       rclcpp::Parameter("sensors.b.height", 480),
+       rclcpp::Parameter("sensors.b.fx", 450.0),
+       rclcpp::Parameter("sensors.b.fy", 450.0),
+       rclcpp::Parameter("sensors.b.vx", 320.0),
+       rclcpp::Parameter("sensors.b.vy", 240.0)});
+  TestServer server(node);
+  ASSERT_EQ(server.sensors_.size(), 2u);
+
+  constexpr int64_t kMinusNs = 995000000LL;
+  constexpr int64_t kFrameNs = 1000000000LL;
+  constexpr int64_t kPlusNs = 1005000000LL;
+  pushTransform(&server, Transformation(), kMinusNs, "map");
+  pushTransform(&server, Transformation(), kPlusNs, "map");
+  const rclcpp::Time stamp(kFrameNs, RCL_ROS_TIME);
+
+  // Sensor A: a LiDAR box-room scan (static pose at the room's center),
+  // matching its own configured projector resolution/FOV. Since the sensor
+  // pose is identity, the row-8 (an interior row, not the fov_up/fov_down
+  // boundary row -- projectPointToImageLiDAR's asin/atan2 round trip can
+  // push a boundary-row point a float epsilon out of [0, height), which
+  // its strict floor/ceil bounds check then rejects), col-0 hit is itself
+  // the exact world-frame wall hit; probe 2% short of it along the same
+  // ray (just inside the wall) to avoid depending on which side of a
+  // voxel/truncation boundary the raw float hit lands on.
+  constexpr int kWidth = 256, kHeight = 16;
+  const BoxRoomLidar lidar(kWidth, kHeight, 3.0, -25.0);
+  const std::vector<Eigen::Vector3f> a_points =
+      lidar.raycast(Eigen::Vector3d::Zero(), 0.0);
+  const Point a_probe = a_points[8 * kWidth] * 0.98f;
+  const Layer<TsdfVoxel>& layer = server.getTsdfMapPtr()->getTsdfLayer();
+  server.insertPointcloud(
+      makeCloudMsg(a_points, stamp, "a_frame"), server.sensors_[0].get());
+
+  const TsdfVoxel* lidar_wall_voxel = layer.getVoxelPtrByCoordinates(a_probe);
+  ASSERT_NE(lidar_wall_voxel, nullptr);
+  EXPECT_GT(lidar_wall_voxel->weight, 0.0f);
+
+  // Sensor B: a small camera-model grid at a 2m fronto-parallel plane
+  // (pinhole convention: x = (u - vx) * z / fx, y = (v - vy) * z / fy).
+  // Includes the image center exactly (u=320, v=240 -> local (0, 0, 2)),
+  // so its world position is exactly predictable (identity T_B_C/T_B_D).
+  constexpr double kFx = 450.0, kFy = 450.0, kVx = 320.0, kVy = 240.0;
+  constexpr float kZ = 2.0f;
+  std::vector<Eigen::Vector3f> b_points;
+  for (int v = 0; v <= 480; v += 40) {
+    for (int u = 0; u <= 640; u += 40) {
+      b_points.emplace_back(
+          static_cast<float>((u - kVx) * kZ / kFx),
+          static_cast<float>((v - kVy) * kZ / kFy), kZ);
+    }
+  }
+  server.insertPointcloud(
+      makeCloudMsg(b_points, stamp, "b_frame"), server.sensors_[1].get());
+
+  // The exact camera-center voxel: just short of z=2 (in front of the
+  // surface, along the ray from the origin).
+  const TsdfVoxel* camera_center_voxel =
+      layer.getVoxelPtrByCoordinates(Point(0.0f, 0.0f, 1.9f));
+  ASSERT_NE(camera_center_voxel, nullptr);
+  EXPECT_GT(camera_center_voxel->weight, 0.0f);
+
+  // Both sensors' evidence must coexist in the one shared map: sensor A's
+  // wall voxel is still there after sensor B's later integration.
+  const TsdfVoxel* lidar_wall_voxel_after_b =
+      layer.getVoxelPtrByCoordinates(a_probe);
+  ASSERT_NE(lidar_wall_voxel_after_b, nullptr);
+  EXPECT_GT(lidar_wall_voxel_after_b->weight, 0.0f);
+}
+
+// ---- Invalid per-sensor projector config fails fast at construction ----
+
+TEST(MultiSensorServerNp, InvalidProjectorConfigThrowsAtConstruction) {
+  auto node = makeMultiSensorNode(
+      "np_invalid_projector",
+      {rclcpp::Parameter(
+           "sensor_names", std::vector<std::string>{"a", "b"}),
+       rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
+       rclcpp::Parameter("sensors.a.sensor_is_lidar", true),
+       rclcpp::Parameter("sensors.a.width", 256),
+       rclcpp::Parameter("sensors.a.height", 16),
+       rclcpp::Parameter("sensors.a.fov_up", 3.0),
+       rclcpp::Parameter("sensors.a.fov_down", -25.0),
+       rclcpp::Parameter("sensors.b.topic", "b_pointcloud"),
+       // Invalid: width defaults to 0 (never set).
+       rclcpp::Parameter("sensors.b.height", 16)});
+
+  std::string message;
+  try {
+    TestServer server(node);
+  } catch (const std::invalid_argument& e) {
+    message = e.what();
+  }
+  EXPECT_NE(message.find("'b'"), std::string::npos) << message;
+  EXPECT_NE(message.find("invalid projector config"), std::string::npos)
+      << message;
+}
+
+#endif  // TEST_NP_TSDF_SERVER
 
 }  // namespace
 }  // namespace voxfield

@@ -444,3 +444,92 @@ class under test.
 + 5 new `test_multi_sensor_server` cases + 1 new CTest aggregate entry).
 `git status` after this phase touches only `tsdf_server.{h,cc}`,
 `CMakeLists.txt`, and the new test file.
+
+## Phase 6: `NpTsdfServer` multi-sensor frontend
+
+Same rewrite as Phase 5, mirrored onto `NpTsdfServer`, plus M8: each
+`SensorInput<NpTsdfIntegratorBase>` now also owns its own
+`std::unique_ptr<RangeImageProjector> projector`, built from
+`LoadedSensor::projector` (the per-sensor-resolved `RangeImageProjector::Config`
+from `loadSensors()`). `processPointCloudMessageAndInsert()`'s range-image
+step is one line, `sensor->projector->process(...)`, replacing Phase 2's
+single shared `projector_` member (removed). The seven
+`projectPointCloudToImage()`-style wrapper methods now delegate to
+`sensors_[0]->projector` instead — `test_np_tsdf_server.cc`'s 8 cases
+needed zero edits, same as Phase 2. Dropped two now-fully-dead members,
+`fov_down_rad_`/`fov_rad_` (their only write was the old projector-config
+block Phase 2 already made unreachable; grepped to confirm nothing read
+them post-Phase-2 before removing).
+
+`loadSensors()` is called with `tsdf_base = nullptr` (an NP server never
+reads the TSDF-only struct) and both `np_base`/`projector_base` non-null —
+this is also what gates `sensor_config_loader.cc`'s NP-only checks
+(`RangeImageProjector::Config::isValid()`, the NP branch of the per-sensor
+INFO log) via `np_base != nullptr`, so a `TsdfServer` multi-sensor config
+(which never sets `width`/`height`) is never validated as if it needed a
+camera/LiDAR model.
+
+**Found and fixed a real bug while writing the NP equivalence test**
+(caught by the test itself, not by inspection): `sensor_config_loader.cc`'s
+per-sensor INFO log printed `sensor.tsdf.min/max_ray_length_m` in *both*
+branches, including the `is_np_server` one — for an NP server (`tsdf_base
+== nullptr`), `sensor.tsdf` is always default-constructed, so the log
+silently showed the wrong struct's (coincidentally same-default, 5.0 m)
+value instead of the real `sensor.np_tsdf.max_ray_length_m` the integrator
+actually uses. Log-only bug (the integrator itself always read the correct
+field), but real: fixed to read `sensor.np_tsdf.*` in that branch.
+
+**`test/test_multi_sensor_server.cc` restructured** with the
+`test_legacy_golden.cc`/`test_server_map_io.cc` `#ifdef TEST_NP_TSDF_SERVER`
+split (can't include both server headers in one translation unit), so the
+same source now builds two binaries: `test_multi_sensor_server` (the 5
+Phase-5 TSDF cases, unchanged) and `test_multi_sensor_server_np_tsdf` (3
+new cases, all three named in the plan):
+- **Equivalence** (exact): mirrors Phase 5's, with both servers' `"default"`/
+  `'a'`/`'b'` sensors sharing identical top-level LiDAR params (256×16, fov
+  3/−25°) instead of per-sensor overrides, so legacy and multi-sensor mode
+  inherit the identical projector config the same way real configs would.
+- **Mixed LiDAR + camera**: sensor A (LiDAR, box-room scan) and sensor B
+  (camera, a small pinhole grid on a 2 m fronto-parallel plane, chosen so
+  the image center `u=320,v=240` lands at exactly local `(0,0,2)` — an
+  exactly predictable world voxel with identity extrinsics). Checking "both
+  sensors' voxels exist" by comparing allocated block *counts* before/after
+  B turned out not to work: A's own spherical LiDAR scan already carves
+  free space through most of the room's interior (including near B's z=2m
+  plane), so B added weight to already-allocated blocks without changing
+  the count. Replaced with two direct, sensor-specific voxel checks
+  instead (A's wall hit, B's image-center hit), each still present after
+  the other sensor integrates.
+- **Invalid projector throws at construction**: sensor B's `width` left
+  unset (defaults to 0) → `NpTsdfServer`'s constructor itself throws
+  `std::invalid_argument` (via `loadSensors()`, uncaught, propagating out —
+  exactly M13.7's "the process exits non-zero" behavior), with `'b'` and
+  "invalid projector config" both present in the message.
+
+**A real floating-point edge case, caught by the mixed test and fixed by
+changing the test, not the code:** the first attempt probed the LiDAR
+wall-hit voxel at row 0 of the configured image (elevation exactly
+`fov_up`, the top boundary) and got weight `0` — not a bug: `asin`/`atan2`
+round-tripping a point's 3D position back to an angle in
+`projectPointToImageLiDAR()` can land a float epsilon on the wrong side of
+exactly `fov_up`, and the deliberate (verbatim, pre-existing)
+`floor(proj_y) < 0` boundary check then rejects the point. Switched the
+probe to an interior row (row 8 of 16) where this can't happen — a
+reminder that a boundary row is a bad choice for hand-computing an
+"exact" expected pixel in *any* test of this projection math, not
+something to loosen the production bounds check for.
+
+**Manual accept-criteria check:** `voxfield_server` and `np_tsdf_server`
+both started against a `sensor_names: [front, back]` config and showed
+`/front/points`/`/back/points` (no `pointcloud`) in `ros2 node info`. Aside:
+`np_tsdf_server`'s executable names its node `"voxfield"` (matching
+`voxfield_server`'s own node name) — a pre-existing quirk in
+`np_tsdf_server_node.cc`, unrelated to this plan; noted here only because
+it wasted a few minutes guessing the wrong node name for `ros2 node info`.
+
+**Full suite:** `Summary: 147 tests, 0 errors, 0 failures, 4 skipped` (143
++ 3 new `test_multi_sensor_server_np_tsdf` cases + 1 new CTest aggregate
+entry). `test_legacy_golden_np_tsdf` and all 8 `test_np_tsdf_server` cases
+passed with zero edits. `git status` after this phase touches
+`np_tsdf_server.{h,cc}`, `sensor_config_loader.cc` (the log fix),
+`CMakeLists.txt`, and `test_multi_sensor_server.cc`.

@@ -170,10 +170,20 @@ if(BUILD_TESTING)
     SKIP_LINKING_MAIN_LIBRARIES)
   target_link_libraries(test_sensor_config ${PROJECT_NAME} gtest)
 
-  # TsdfServer multi-sensor frontend (MULTI_SENSOR_PLAN.md Phase 5).
+  # TsdfServer / NpTsdfServer multi-sensor frontends (MULTI_SENSOR_PLAN.md
+  # Phase 5/6). Same TsdfServer/NpTsdfServer-can't-share-a-translation-unit
+  # split as test_server_map_io and test_legacy_golden above.
   ament_add_gtest(test_multi_sensor_server test/test_multi_sensor_server.cc
     SKIP_LINKING_MAIN_LIBRARIES)
   target_link_libraries(test_multi_sensor_server ${PROJECT_NAME} gtest)
+
+  ament_add_gtest(
+    test_multi_sensor_server_np_tsdf test/test_multi_sensor_server.cc
+    SKIP_LINKING_MAIN_LIBRARIES)
+  target_link_libraries(
+    test_multi_sensor_server_np_tsdf ${PROJECT_NAME} gtest)
+  target_compile_definitions(
+    test_multi_sensor_server_np_tsdf PRIVATE TEST_NP_TSDF_SERVER)
 
   # NpTsdfServer range-image preprocessing regressions ("Known upstream
   # issues" #1-#3 in docs/ROS2_PORT_NOTES.md).

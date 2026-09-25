@@ -499,8 +499,8 @@ std::vector<LoadedSensor> loadSensors(
           node.get_logger(),
           "sensor '%s': topic='%s' frame='%s' ray=[%.2f, %.2f]m %s",
           sensor.input.name.c_str(), sensor.input.topic.c_str(),
-          frame_desc.c_str(), sensor.tsdf.min_ray_length_m,
-          sensor.tsdf.max_ray_length_m, model_desc.c_str());
+          frame_desc.c_str(), sensor.np_tsdf.min_ray_length_m,
+          sensor.np_tsdf.max_ray_length_m, model_desc.c_str());
     } else {
       RCLCPP_INFO(
           node.get_logger(),

@@ -1,6 +1,7 @@
 #include "voxfield_ros/np_tsdf_server.h"
 
 #include <chrono>
+#include <utility>
 
 #include "voxfield_ros/conversions.h"
 #include "voxfield_ros/kindr_conversions.h"
@@ -8,6 +9,23 @@
 #include "voxfield_ros/ros_params.h"
 
 namespace voxfield {
+namespace {
+
+std::unique_ptr<NpTsdfIntegratorBase> makeNpTsdfIntegrator(
+    const std::string& method, const NpTsdfIntegratorBase::Config& config,
+    Layer<TsdfVoxel>* layer) {
+  if (method.compare("simple") == 0) {
+    return std::make_unique<SimpleNpTsdfIntegrator>(config, layer);
+  } else if (method.compare("merged") == 0) {
+    return std::make_unique<MergedNpTsdfIntegrator>(config, layer);
+  } else if (method.compare("fast") == 0) {
+    return std::make_unique<FastNpTsdfIntegrator>(config, layer);
+  } else {
+    return std::make_unique<SimpleNpTsdfIntegrator>(config, layer);
+  }
+}
+
+}  // namespace
 
 NpTsdfServer::NpTsdfServer(rclcpp::Node::SharedPtr node)
     : NpTsdfServer(
@@ -37,9 +55,7 @@ NpTsdfServer::NpTsdfServer(
       accumulate_icp_corrections_(true),
       pointcloud_queue_size_(1),
       num_subscribers_tsdf_map_(0),
-      transformer_(node),
-      last_msg_time_ptcloud_(0, 0, RCL_ROS_TIME),
-      last_msg_time_freespace_ptcloud_(0, 0, RCL_ROS_TIME) {
+      transformer_(node) {
   getServerConfigFromRosParam();
 
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(node_);
@@ -61,19 +77,6 @@ NpTsdfServer::NpTsdfServer(
   gsdf_slice_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(
       "~/gsdf_slice", kLatchedQos);
 
-  param(*node_, "pointcloud_queue_size", pointcloud_queue_size_);
-  bool input_qos_best_effort = false;
-  param(*node_, "input_qos_best_effort", input_qos_best_effort);
-  const rclcpp::QoS pointcloud_qos =
-      input_qos_best_effort
-          ? rclcpp::QoS(
-                rclcpp::SensorDataQoS().keep_last(
-                    static_cast<size_t>(pointcloud_queue_size_)))
-          : rclcpp::QoS(pointcloud_queue_size_);
-  pointcloud_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-      "pointcloud", pointcloud_qos,
-      std::bind(&NpTsdfServer::insertPointcloud, this, std::placeholders::_1));
-
   mesh_pub_ =
       node_->create_publisher<voxfield_msgs::msg::Mesh>("~/mesh", kLatchedQos);
 
@@ -88,15 +91,51 @@ NpTsdfServer::NpTsdfServer(
       "~/Robot_model", rclcpp::QoS(100));
   param(*node_, "publish_tsdf_map", publish_tsdf_map_);
 
-  if (use_freespace_pointcloud_) {
-    // points that are not inside an object, but may also not be on a surface.
-    // These will only be used to mark freespace beyond the truncation distance.
-    freespace_pointcloud_sub_ =
-        node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-            "freespace_pointcloud", pointcloud_qos,
-            std::bind(
-                &NpTsdfServer::insertFreespacePointcloud, this,
-                std::placeholders::_1));
+  // MULTI_SENSOR_PLAN.md M2/M4/M8: build the per-sensor configs. Loading
+  // configs doesn't touch tsdf_map_, so this can run before it exists --
+  // and must, so M11's ICP guard right below can see the sensor count
+  // before icp_transform_pub_ would be created.
+  std::string method("merged");
+  param(*node_, "method", method);
+
+  SensorConfig legacy_input;
+  legacy_input.name = "default";
+  legacy_input.topic = "pointcloud";
+  legacy_input.freespace_topic =
+      use_freespace_pointcloud_ ? "freespace_pointcloud" : "";
+  legacy_input.frame = sensor_frame_;
+  legacy_input.queue_size = pointcloud_queue_size_;
+  param(*node_, "input_qos_best_effort", legacy_input.input_qos_best_effort);
+  {
+    double min_time_between_msgs_sec = 0.0;
+    param(*node_, "min_time_between_msgs_sec", min_time_between_msgs_sec);
+    legacy_input.min_time_between_msgs_sec = min_time_between_msgs_sec;
+  }
+
+  RangeImageProjector::Config legacy_projector_base;
+  legacy_projector_base.sensor_is_lidar = sensor_is_lidar_;
+  legacy_projector_base.width = width_;
+  legacy_projector_base.height = height_;
+  legacy_projector_base.fov_up = fov_up_;
+  legacy_projector_base.fov_down = fov_down_;
+  legacy_projector_base.vx = vx_;
+  legacy_projector_base.vy = vy_;
+  legacy_projector_base.fx = fx_;
+  legacy_projector_base.fy = fy_;
+  legacy_projector_base.smooth_thre_ratio = smooth_thre_ratio_;
+  legacy_projector_base.min_z = min_z_;
+  legacy_projector_base.min_dist = min_dist_;
+
+  const std::vector<LoadedSensor> loaded_sensors = loadSensors(
+      *node_, nullptr, &integrator_config, &legacy_projector_base, method,
+      legacy_input);
+
+  // M11: ICP is not supported with multiple sensors.
+  if (enable_icp_ && loaded_sensors.size() > 1) {
+    RCLCPP_ERROR(
+        node_->get_logger(),
+        "ICP is not supported with multiple sensors; disabling");
+    enable_icp_ = false;
   }
 
   if (enable_icp_) {
@@ -107,29 +146,52 @@ NpTsdfServer::NpTsdfServer(
     param(*node_, "pose_corrected_frame", pose_corrected_frame_);
   }
 
-  // Initialize TSDF Map and integrator.
+  // Initialize the TSDF map and its (currently sensor-less) accessories.
   tsdf_map_.reset(new TsdfMap(config));
-
-  std::string method("merged");
-  param(*node_, "method", method);
-  if (method.compare("simple") == 0) {
-    tsdf_integrator_.reset(new SimpleNpTsdfIntegrator(
-        integrator_config, tsdf_map_->getTsdfLayerPtr()));
-  } else if (method.compare("merged") == 0) {
-    tsdf_integrator_.reset(new MergedNpTsdfIntegrator(
-        integrator_config, tsdf_map_->getTsdfLayerPtr()));
-  } else if (method.compare("fast") == 0) {
-    tsdf_integrator_.reset(new FastNpTsdfIntegrator(
-        integrator_config, tsdf_map_->getTsdfLayerPtr()));
-  } else {
-    tsdf_integrator_.reset(new SimpleNpTsdfIntegrator(
-        integrator_config, tsdf_map_->getTsdfLayerPtr()));
-  }
 
   mesh_layer_.reset(new MeshLayer(tsdf_map_->block_size()));
   mesh_integrator_.reset(new MeshIntegrator<TsdfVoxel>(
       mesh_config, tsdf_map_->getTsdfLayerPtr(), mesh_layer_.get()));
   icp_.reset(new ICP(getICPConfigFromRosParam(*node_)));
+
+  // M3/M8: one integrator and one RangeImageProjector per sensor, all on
+  // the shared layer.
+  sensors_.reserve(loaded_sensors.size());
+  for (const LoadedSensor& loaded : loaded_sensors) {
+    auto sensor = std::make_unique<SensorInput<NpTsdfIntegratorBase>>();
+    sensor->config = loaded.input;
+    sensor->integrator = makeNpTsdfIntegrator(
+        loaded.method, loaded.np_tsdf, tsdf_map_->getTsdfLayerPtr());
+    sensor->projector =
+        std::make_unique<RangeImageProjector>(loaded.projector);
+    sensors_.push_back(std::move(sensor));
+  }
+
+  // Subscriptions last, among these, so no callback can fire before every
+  // sensor's integrator/projector exists (M4).
+  for (std::unique_ptr<SensorInput<NpTsdfIntegratorBase>>& owned_sensor :
+       sensors_) {
+    SensorInput<NpTsdfIntegratorBase>* sensor = owned_sensor.get();
+    const rclcpp::QoS pointcloud_qos =
+        sensor->config.input_qos_best_effort
+            ? rclcpp::QoS(
+                  rclcpp::SensorDataQoS().keep_last(
+                      static_cast<size_t>(sensor->config.queue_size)))
+            : rclcpp::QoS(sensor->config.queue_size);
+    sensor->sub = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
+        sensor->config.topic, pointcloud_qos,
+        [this, sensor](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+          insertPointcloud(msg, sensor);
+        });
+    if (!sensor->config.freespace_topic.empty()) {
+      sensor->freespace_sub =
+          node_->create_subscription<sensor_msgs::msg::PointCloud2>(
+              sensor->config.freespace_topic, pointcloud_qos,
+              [this, sensor](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+                insertFreespacePointcloud(msg, sensor);
+              });
+    }
+  }
 
   // Advertise services.
   generate_mesh_srv_ = node_->create_service<std_srvs::srv::Empty>(
@@ -183,17 +245,11 @@ NpTsdfServer::NpTsdfServer(
 }
 
 void NpTsdfServer::getServerConfigFromRosParam() {
-  // Before subscribing, determine minimum time between messages.
-  // 0 by default.
-  double min_time_between_msgs_sec = 0.0;
-  param(*node_, "min_time_between_msgs_sec", min_time_between_msgs_sec);
-  min_time_between_msgs_ =
-      rclcpp::Duration::from_seconds(min_time_between_msgs_sec);
-
   param(*node_, "max_block_distance_from_body", max_block_distance_from_body_);
   param(*node_, "slice_level", slice_level_);
   param(*node_, "world_frame", world_frame_);
   param(*node_, "sensor_frame", sensor_frame_);
+  param(*node_, "body_frame", body_frame_);
   param(
       *node_, "publish_pointclouds_on_update", publish_pointclouds_on_update_);
   param(*node_, "publish_slices", publish_slices_);
@@ -207,7 +263,8 @@ void NpTsdfServer::getServerConfigFromRosParam() {
   param(*node_, "verbose", verbose_);
   param(*node_, "timing", timing_);
 
-  // Sensor specific
+  // Sensor specific (top-level defaults; per-sensor overrides applied by
+  // loadSensors() in the constructor, MULTI_SENSOR_PLAN.md M2/M8).
   param(*node_, "sensor_is_lidar", sensor_is_lidar_);
   param(*node_, "width", width_);
   param(*node_, "height", height_);
@@ -218,9 +275,6 @@ void NpTsdfServer::getServerConfigFromRosParam() {
   if (sensor_is_lidar_) {
     param(*node_, "fov_up", fov_up_);
     param(*node_, "fov_down", fov_down_);
-    float fov = std::abs(fov_down_) + std::abs(fov_up_);
-    fov_down_rad_ = fov_down_ / 180.0f * M_PI;
-    fov_rad_ = fov / 180.0f * M_PI;
   } else {
     param(*node_, "vx", vx_);
     param(*node_, "vy", vy_);
@@ -236,21 +290,6 @@ void NpTsdfServer::getServerConfigFromRosParam() {
         "not work correctly.",
         width_, height_);
   }
-
-  RangeImageProjector::Config projector_config;
-  projector_config.sensor_is_lidar = sensor_is_lidar_;
-  projector_config.width = width_;
-  projector_config.height = height_;
-  projector_config.fov_up = fov_up_;
-  projector_config.fov_down = fov_down_;
-  projector_config.vx = vx_;
-  projector_config.vy = vy_;
-  projector_config.fx = fx_;
-  projector_config.fy = fy_;
-  projector_config.smooth_thre_ratio = smooth_thre_ratio_;
-  projector_config.min_z = min_z_;
-  projector_config.min_dist = min_dist_;
-  projector_.reset(new RangeImageProjector(projector_config));
 
   // Robot model related
   param(*node_, "publish_robot_model", publish_robot_model_);
@@ -290,6 +329,17 @@ void NpTsdfServer::getServerConfigFromRosParam() {
 void NpTsdfServer::processPointCloudMessageAndInsert(
     sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg,
     const Transformation& T_G_C, const bool is_freespace_pointcloud) {
+  if (sensors_.empty()) {
+    return;
+  }
+  processPointCloudMessageAndInsert(
+      pointcloud_msg, T_G_C, is_freespace_pointcloud, sensors_[0].get());
+}
+
+void NpTsdfServer::processPointCloudMessageAndInsert(
+    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg,
+    const Transformation& T_G_C, const bool is_freespace_pointcloud,
+    SensorInput<NpTsdfIntegratorBase>* sensor) {
   timing::Timer ptcloud_timer("preprocess/input");
   // Convert the PCL pointcloud into our awesome format.
   // Horrible hack fix to fix color parsing colors in PCL.
@@ -345,8 +395,9 @@ void NpTsdfServer::processPointCloudMessageAndInsert(
   // calculate point-wise normal
   timing::Timer range_pre_timer("preprocess/normal_estimation");
   // Preprocess the point cloud: project to a range image, compute normals,
-  // and back-project to a point cloud.
-  projector_->process(points_C, colors, &points_C, &normals_C, &colors);
+  // and back-project to a point cloud, using this sensor's own projector
+  // (MULTI_SENSOR_PLAN.md M8).
+  sensor->projector->process(points_C, colors, &points_C, &normals_C, &colors);
   range_pre_timer.Stop();
 
   // ICP based pose refinement
@@ -406,15 +457,16 @@ void NpTsdfServer::processPointCloudMessageAndInsert(
 
   if (verbose_) {
     RCLCPP_INFO(
-        node_->get_logger(), "Integrating a pointcloud with %lu points.",
-        points_C.size());
+        node_->get_logger(), "[%s] Integrating a pointcloud with %lu points.",
+        sensor->config.name.c_str(), points_C.size());
   }
 
   std::chrono::steady_clock::time_point start =
       std::chrono::steady_clock::now();
   // non-projective TSDF integration
   integratePointcloud(
-      T_G_C_refined, points_C, normals_C, colors, is_freespace_pointcloud);
+      T_G_C_refined, points_C, normals_C, colors, is_freespace_pointcloud,
+      sensor);
   std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
   if (verbose_) {
     RCLCPP_INFO(
@@ -429,17 +481,39 @@ void NpTsdfServer::processPointCloudMessageAndInsert(
     updateMesh();
   }
 
+  // MULTI_SENSOR_PLAN.md M9: see the identical logic in tsdf_server.cc.
+  Transformation T_pose = T_G_C;
+  if (!body_frame_.empty()) {
+    Transformation T_G_B;
+    const Transformation identity_extrinsic;
+    if (transformer_.lookupSensorTransform(
+            body_frame_, &identity_extrinsic,
+            rclcpp::Time(pointcloud_msg->header.stamp, RCL_ROS_TIME),
+            &T_G_B)) {
+      T_pose = T_G_B;
+    } else {
+      RCLCPP_WARN_THROTTLE(
+          node_->get_logger(), *node_->get_clock(), 10000,
+          "Failed to look up body_frame '%s'; falling back to sensor '%s's "
+          "own pose for block removal / clear sphere / newPoseCallback.",
+          body_frame_.c_str(), sensor->config.name.c_str());
+    }
+  }
+
   // timing::Timer block_remove_timer("remove_distant_blocks");
   tsdf_map_->getTsdfLayerPtr()->removeDistantBlocks(
-      T_G_C.getPosition(), max_block_distance_from_body_);
+      T_pose.getPosition(), max_block_distance_from_body_);
   mesh_layer_->clearDistantMesh(
-      T_G_C.getPosition(), max_block_distance_from_body_);
+      T_pose.getPosition(), max_block_distance_from_body_);
   // block_remove_timer.Stop();
 
-  publishRobotMesh(T_G_C_refined);
+  // M10: the robot model marker follows the primary sensor only.
+  if (!sensors_.empty() && sensor == sensors_[0].get()) {
+    publishRobotMesh(T_G_C_refined);
+  }
 
   // Callback for inheriting classes.
-  newPoseCallback(T_G_C);
+  newPoseCallback(T_pose);
 }
 
 void NpTsdfServer::publishRobotMesh(const Transformation& T_G_C) {
@@ -476,6 +550,7 @@ void NpTsdfServer::publishRobotMesh(const Transformation& T_G_C) {
 
 // Checks if we can get the next message from queue.
 bool NpTsdfServer::getNextPointcloudFromQueue(
+    SensorInput<NpTsdfIntegratorBase>* sensor,
     std::queue<sensor_msgs::msg::PointCloud2::SharedPtr>* queue,
     sensor_msgs::msg::PointCloud2::SharedPtr* pointcloud_msg,
     Transformation* T_G_C) {
@@ -486,23 +561,28 @@ bool NpTsdfServer::getNextPointcloudFromQueue(
   *pointcloud_msg = queue->front();
 
   // MULTI_SENSOR_PLAN.md F1/M5: see the identical comment in tsdf_server.cc.
-  const std::string& from_frame = sensor_frame_.empty()
+  const std::string& from_frame = sensor->config.frame.empty()
       ? (*pointcloud_msg)->header.frame_id
-      : sensor_frame_;
-  if (transformer_.lookupTransform(
-          from_frame, world_frame_,
-          rclcpp::Time((*pointcloud_msg)->header.stamp, RCL_ROS_TIME), T_G_C)) {
+      : sensor->config.frame;
+  const Transformation* T_B_C_or_null =
+      sensor->config.has_T_B_C ? &sensor->config.T_B_C : nullptr;
+  if (transformer_.lookupSensorTransform(
+          from_frame, T_B_C_or_null,
+          rclcpp::Time((*pointcloud_msg)->header.stamp, RCL_ROS_TIME),
+          T_G_C)) {
     queue->pop();
     return true;
   } else {
     if (queue->size() >= kMaxQueueSize) {
       RCLCPP_ERROR_THROTTLE(
           node_->get_logger(), *node_->get_clock(), 60000,
-          "Input pointcloud queue getting too long! Dropping "
+          "[%s] Input pointcloud queue getting too long! Dropping "
           "some pointclouds. Either unable to look up transform "
-          "timestamps or the processing is taking too long.");
+          "timestamps or the processing is taking too long.",
+          sensor->config.name.c_str());
       while (queue->size() >= kMaxQueueSize) {
         queue->pop();
+        ++sensor->num_dropped;
       }
     }
   }
@@ -510,24 +590,39 @@ bool NpTsdfServer::getNextPointcloudFromQueue(
 }
 
 void NpTsdfServer::insertPointcloud(
-    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg_in) {
+    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud) {
+  if (sensors_.empty()) {
+    return;
+  }
+  insertPointcloud(pointcloud, sensors_[0].get());
+}
+
+void NpTsdfServer::insertPointcloud(
+    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg_in,
+    SensorInput<NpTsdfIntegratorBase>* sensor) {
+  ++sensor->num_received;
   const rclcpp::Time stamp(pointcloud_msg_in->header.stamp, RCL_ROS_TIME);
-  if (stamp - last_msg_time_ptcloud_ > min_time_between_msgs_) {
-    last_msg_time_ptcloud_ = stamp;
+  const rclcpp::Duration min_time_between_msgs =
+      rclcpp::Duration::from_seconds(sensor->config.min_time_between_msgs_sec);
+  if (stamp - sensor->last_msg_time > min_time_between_msgs) {
+    sensor->last_msg_time = stamp;
     // So we have to process the queue anyway... Push this back.
-    pointcloud_queue_.push(pointcloud_msg_in);
+    sensor->queue.push(pointcloud_msg_in);
+  } else {
+    ++sensor->num_throttled;
   }
 
   Transformation T_G_C;
   sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg;
   bool processed_any = false;
-  while (
-      getNextPointcloudFromQueue(&pointcloud_queue_, &pointcloud_msg, &T_G_C)) {
+  while (getNextPointcloudFromQueue(
+      sensor, &sensor->queue, &pointcloud_msg, &T_G_C)) {
     constexpr bool is_freespace_pointcloud = false;
     // main processing entrance
     processPointCloudMessageAndInsert(
-        pointcloud_msg, T_G_C, is_freespace_pointcloud);
+        pointcloud_msg, T_G_C, is_freespace_pointcloud, sensor);
     processed_any = true;
+    ++sensor->num_integrated;
   }
 
   if (!processed_any) {
@@ -551,21 +646,32 @@ void NpTsdfServer::insertPointcloud(
 }
 
 void NpTsdfServer::insertFreespacePointcloud(
-    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg_in) {
+    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud) {
+  if (sensors_.empty()) {
+    return;
+  }
+  insertFreespacePointcloud(pointcloud, sensors_[0].get());
+}
+
+void NpTsdfServer::insertFreespacePointcloud(
+    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg_in,
+    SensorInput<NpTsdfIntegratorBase>* sensor) {
   const rclcpp::Time stamp(pointcloud_msg_in->header.stamp, RCL_ROS_TIME);
-  if (stamp - last_msg_time_freespace_ptcloud_ > min_time_between_msgs_) {
-    last_msg_time_freespace_ptcloud_ = stamp;
+  const rclcpp::Duration min_time_between_msgs =
+      rclcpp::Duration::from_seconds(sensor->config.min_time_between_msgs_sec);
+  if (stamp - sensor->last_freespace_msg_time > min_time_between_msgs) {
+    sensor->last_freespace_msg_time = stamp;
     // So we have to process the queue anyway... Push this back.
-    freespace_pointcloud_queue_.push(pointcloud_msg_in);
+    sensor->freespace_queue.push(pointcloud_msg_in);
   }
 
   Transformation T_G_C;
   sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg;
   while (getNextPointcloudFromQueue(
-      &freespace_pointcloud_queue_, &pointcloud_msg, &T_G_C)) {
+      sensor, &sensor->freespace_queue, &pointcloud_msg, &T_G_C)) {
     constexpr bool is_freespace_pointcloud = true;
     processPointCloudMessageAndInsert(
-        pointcloud_msg, T_G_C, is_freespace_pointcloud);
+        pointcloud_msg, T_G_C, is_freespace_pointcloud, sensor);
   }
 }
 
@@ -573,9 +679,22 @@ void NpTsdfServer::integratePointcloud(
     const Transformation& T_G_C, const Pointcloud& points_C,
     const Pointcloud& normals_C, const Colors& colors,
     const bool is_freespace_pointcloud) {
+  if (sensors_.empty()) {
+    return;
+  }
+  integratePointcloud(
+      T_G_C, points_C, normals_C, colors, is_freespace_pointcloud,
+      sensors_[0].get());
+}
+
+void NpTsdfServer::integratePointcloud(
+    const Transformation& T_G_C, const Pointcloud& points_C,
+    const Pointcloud& normals_C, const Colors& colors,
+    const bool is_freespace_pointcloud,
+    SensorInput<NpTsdfIntegratorBase>* sensor) {
   CHECK_EQ(points_C.size(), colors.size());
   CHECK_EQ(points_C.size(), normals_C.size());
-  tsdf_integrator_->integratePointCloud(
+  sensor->integrator->integratePointCloud(
       T_G_C, points_C, normals_C, colors, is_freespace_pointcloud);
 }
 
@@ -841,46 +960,46 @@ void NpTsdfServer::tsdfMapCallback(
   }
 }
 
-// Thin wrappers delegating to projector_ (MULTI_SENSOR_PLAN.md M8/Phase 2).
-// The actual implementations, verbatim, now live in RangeImageProjector
-// (range_image_projector.cc).
+// Thin wrappers delegating to sensors_[0]->projector
+// (MULTI_SENSOR_PLAN.md M8). The actual implementations, verbatim, live in
+// RangeImageProjector (range_image_projector.cc).
 bool NpTsdfServer::projectPointCloudToImage(
     const Pointcloud& points_C, const Colors& colors,
     cv::Mat& vertex_map,   // NOLINT
     cv::Mat& depth_image,  // NOLINT
     cv::Mat& color_image, float min_z, float min_d) const {
-  return projector_->projectPointCloudToImage(
+  return sensors_[0]->projector->projectPointCloudToImage(
       points_C, colors, vertex_map, depth_image, color_image, min_z, min_d);
 }
 
 float NpTsdfServer::projectPointToImageLiDAR(
     const Point& p_C, int* u, int* v) const {
-  return projector_->projectPointToImageLiDAR(p_C, u, v);
+  return sensors_[0]->projector->projectPointToImageLiDAR(p_C, u, v);
 }
 
 float NpTsdfServer::projectPointToImageCamera(
     const Point& p_C, int* u, int* v) const {
-  return projector_->projectPointToImageCamera(p_C, u, v);
+  return sensors_[0]->projector->projectPointToImageCamera(p_C, u, v);
 }
 
 cv::Mat NpTsdfServer::computeNormalImage(
     const cv::Mat& vertex_map, const cv::Mat& depth_image) const {
-  return projector_->computeNormalImage(vertex_map, depth_image);
+  return sensors_[0]->projector->computeNormalImage(vertex_map, depth_image);
 }
 
 Pointcloud NpTsdfServer::extractPointCloud(
     const cv::Mat& vertex_map, const cv::Mat& depth_image) const {
-  return projector_->extractPointCloud(vertex_map, depth_image);
+  return sensors_[0]->projector->extractPointCloud(vertex_map, depth_image);
 }
 
 Colors NpTsdfServer::extractColors(
     const cv::Mat& color_image, const cv::Mat& depth_image) const {
-  return projector_->extractColors(color_image, depth_image);
+  return sensors_[0]->projector->extractColors(color_image, depth_image);
 }
 
 Pointcloud NpTsdfServer::extractNormals(
     const cv::Mat& normal_image, const cv::Mat& depth_image) const {
-  return projector_->extractNormals(normal_image, depth_image);
+  return sensors_[0]->projector->extractNormals(normal_image, depth_image);
 }
 
 }  // namespace voxfield

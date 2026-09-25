@@ -14,6 +14,7 @@
 #include <std_srvs/srv/empty.hpp>
 #include <string>
 #include <tf2_ros/transform_broadcaster.h>
+#include <vector>
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <voxfield/alignment/icp.h>
 #include <voxfield/core/tsdf_map.h>
@@ -29,6 +30,8 @@
 #include "voxfield_ros/mesh_vis.h"
 #include "voxfield_ros/ptcloud_vis.h"
 #include "voxfield_ros/range_image_projector.h"
+#include "voxfield_ros/sensor_config_loader.h"
+#include "voxfield_ros/sensor_input.h"
 #include "voxfield_ros/transformer.h"
 
 namespace voxfield {
@@ -52,19 +55,36 @@ class NpTsdfServer {
 
   void getServerConfigFromRosParam();
 
+  // MULTI_SENSOR_PLAN.md M14: kept with its original signature, routing to
+  // the primary sensor (sensors_[0]).
   void insertPointcloud(sensor_msgs::msg::PointCloud2::SharedPtr pointcloud);
+  void insertPointcloud(
+      sensor_msgs::msg::PointCloud2::SharedPtr pointcloud,
+      SensorInput<NpTsdfIntegratorBase>* sensor);
 
   void insertFreespacePointcloud(
       sensor_msgs::msg::PointCloud2::SharedPtr pointcloud);
+  void insertFreespacePointcloud(
+      sensor_msgs::msg::PointCloud2::SharedPtr pointcloud,
+      SensorInput<NpTsdfIntegratorBase>* sensor);
 
   virtual void processPointCloudMessageAndInsert(
       sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg,
       const Transformation& T_G_C, const bool is_freespace_pointcloud);
+  virtual void processPointCloudMessageAndInsert(
+      sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg,
+      const Transformation& T_G_C, const bool is_freespace_pointcloud,
+      SensorInput<NpTsdfIntegratorBase>* sensor);
 
   void integratePointcloud(
       const Transformation& T_G_C, const Pointcloud& points_C,
       const Pointcloud& normals_C, const Colors& colors,
       const bool is_freespace_pointcloud = false);
+  void integratePointcloud(
+      const Transformation& T_G_C, const Pointcloud& points_C,
+      const Pointcloud& normals_C, const Colors& colors,
+      const bool is_freespace_pointcloud,
+      SensorInput<NpTsdfIntegratorBase>* sensor);
   virtual void newPoseCallback(const Transformation& /*new_pose*/) {
     // Do nothing.
   }
@@ -145,9 +165,9 @@ class NpTsdfServer {
   // Visualize the robot model in the map
   void publishRobotMesh(const Transformation& T_G_C);
 
-  /// Preprocessing. Thin wrappers delegating to `projector_`
-  /// (MULTI_SENSOR_PLAN.md M8/Phase 2), kept with their original signatures
-  /// so existing callers (test_np_tsdf_server.cc) are unchanged.
+  /// Preprocessing. Thin wrappers delegating to `sensors_[0]->projector`
+  /// (MULTI_SENSOR_PLAN.md M8), kept with their original signatures so
+  /// existing callers (test_np_tsdf_server.cc) are unchanged.
   // from point cloud to range image
   bool projectPointCloudToImage(
       const Pointcloud& points_C, const Colors& colors,
@@ -178,20 +198,15 @@ class NpTsdfServer {
  protected:
   /**
    * Gets the next pointcloud that has an available transform to process from
-   * the queue.
+   * `sensor`'s queue (MULTI_SENSOR_PLAN.md M4).
    */
   bool getNextPointcloudFromQueue(
+      SensorInput<NpTsdfIntegratorBase>* sensor,
       std::queue<sensor_msgs::msg::PointCloud2::SharedPtr>* queue,
       sensor_msgs::msg::PointCloud2::SharedPtr* pointcloud_msg,
       Transformation* T_G_C);
 
   rclcpp::Node::SharedPtr node_;
-
-  /// Data subscribers.
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr
-      pointcloud_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr
-      freespace_pointcloud_sub_;
 
   /// Publish markers for visualization.
   rclcpp::Publisher<voxfield_msgs::msg::Mesh>::SharedPtr mesh_pub_;
@@ -263,6 +278,13 @@ class NpTsdfServer {
   /// Delete blocks that are far from the system to help manage memory
   double max_block_distance_from_body_;
 
+  /**
+   * MULTI_SENSOR_PLAN.md M9: if non-empty, block removal / mesh clear-sphere
+   * / newPoseCallback() use the body's pose instead of each cloud's own
+   * sensor pose. "" (default): unchanged single-sensor behavior.
+   */
+  std::string body_frame_;
+
   /// Pointcloud visualization settings.
   double slice_level_;
 
@@ -279,9 +301,6 @@ class NpTsdfServer {
 
   /// Colormap to use for intensity pointclouds.
   std::shared_ptr<ColorMap> color_map_;
-
-  /// Will throttle to this message rate.
-  rclcpp::Duration min_time_between_msgs_ = rclcpp::Duration(0, 0);
 
   /// What output information to publish
   bool publish_pointclouds_on_update_;
@@ -307,17 +326,13 @@ class NpTsdfServer {
    */
   bool accumulate_icp_corrections_;
 
-  /// Subscriber settings.
+  /// Subscriber settings. Top-level default that per-sensor
+  /// pointcloud_queue_size inherits (M2).
   int pointcloud_queue_size_;
   int num_subscribers_tsdf_map_;
 
   // Maps and integrators.
   std::shared_ptr<TsdfMap> tsdf_map_;
-  std::unique_ptr<NpTsdfIntegratorBase> tsdf_integrator_;
-
-  /// Range-image projection model, built from the sensor-model params below
-  /// at the end of getServerConfigFromRosParam() (MULTI_SENSOR_PLAN.md M8).
-  std::unique_ptr<RangeImageProjector> projector_;
 
   /// ICP matcher
   std::shared_ptr<ICP> icp_;
@@ -333,17 +348,15 @@ class NpTsdfServer {
    * a transform topic.
    */
   Transformer transformer_;
-  /**
-   * Queue of incoming pointclouds, in case the transforms can't be immediately
-   * resolved.
-   */
-  std::queue<sensor_msgs::msg::PointCloud2::SharedPtr> pointcloud_queue_;
-  std::queue<sensor_msgs::msg::PointCloud2::SharedPtr>
-      freespace_pointcloud_queue_;
 
-  // Last message times for throttling input.
-  rclcpp::Time last_msg_time_ptcloud_;
-  rclcpp::Time last_msg_time_freespace_ptcloud_;
+  /**
+   * MULTI_SENSOR_PLAN.md M4: one frontend per sensor -- subscription(s),
+   * queue(s), its own integrator, and its own RangeImageProjector (M8), all
+   * integrating into the shared tsdf_map_ (M3). Legacy (single-sensor) mode
+   * has exactly one entry, named "default". sensors_[0] is the primary
+   * sensor (M10/M14). Never resized after construction.
+   */
+  std::vector<std::unique_ptr<SensorInput<NpTsdfIntegratorBase>>> sensors_;
 
   /// Current transform corrections from ICP.
   Transformation icp_corrected_transform_;
@@ -373,8 +386,6 @@ class NpTsdfServer {
   // LiDAR
   float fov_up_;
   float fov_down_;
-  float fov_down_rad_;
-  float fov_rad_;
 
   // For preprocessing noise filter (mianly for KITTI)
   float min_dist_ = 0.1f;   // 2.75 for KITTI
