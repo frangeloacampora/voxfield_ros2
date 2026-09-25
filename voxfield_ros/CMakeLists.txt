@@ -170,6 +170,11 @@ if(BUILD_TESTING)
     SKIP_LINKING_MAIN_LIBRARIES)
   target_link_libraries(test_sensor_config ${PROJECT_NAME} gtest)
 
+  # TsdfServer multi-sensor frontend (MULTI_SENSOR_PLAN.md Phase 5).
+  ament_add_gtest(test_multi_sensor_server test/test_multi_sensor_server.cc
+    SKIP_LINKING_MAIN_LIBRARIES)
+  target_link_libraries(test_multi_sensor_server ${PROJECT_NAME} gtest)
+
   # NpTsdfServer range-image preprocessing regressions ("Known upstream
   # issues" #1-#3 in docs/ROS2_PORT_NOTES.md).
   ament_add_gtest(test_np_tsdf_server test/test_np_tsdf_server.cc

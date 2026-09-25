@@ -340,3 +340,107 @@ immediately, and a full re-run of the whole suite came back clean at 137/0/0/4
 — treated as ctest-level resource contention under load, not a code
 regression, since nothing in this phase touches `Transformer`. `git status`
 after this phase touches only new `voxfield_ros` files plus `CMakeLists.txt`.
+
+## Phase 5: `TsdfServer` multi-sensor frontend
+
+The core rewrite: `pointcloud_sub_`/`freespace_pointcloud_sub_`/
+`pointcloud_queue_`/`freespace_pointcloud_queue_`/`last_msg_time_ptcloud_`/
+`last_msg_time_freespace_ptcloud_`/`tsdf_integrator_`/`min_time_between_msgs_`
+all removed from `TsdfServer`; replaced by
+`std::vector<std::unique_ptr<SensorInput<TsdfIntegratorBase>>> sensors_`.
+Grepped first to confirm nothing outside `TsdfServer` touches any of them
+directly — `SimulationServer` has its own independent `tsdf_integrator_`
+(doesn't inherit `TsdfServer` at all), and the four derived ESDF servers
+(`VoxbloxServer`/`VoxfieldServer`/`FiestaServer`/`VoxedtServer`) only ever
+pass `tsdf_integrator_config` as a constructor *parameter* to the base
+class — exactly M14's "the programmatic constructor's `integrator_config`
+becomes the base config per-sensor overrides apply to" — so no
+`primaryIntegrator()` accessor (M3's fallback suggestion) was needed.
+
+**Construction order:** `loadSensors()` runs *before* `tsdf_map_` exists
+(it only reads params, no map dependency) so the sensor **count** is known
+in time for M11's ICP guard, which must run before `icp_transform_pub_`
+would be created. Then: `tsdf_map_.reset()` → mesh/ICP accessories → one
+`SensorInput` + integrator per `LoadedSensor` (map now exists) →
+subscriptions created **last**, only once every integrator exists, so no
+callback can fire against a half-built sensor. Taking each `SensorInput`'s
+raw pointer for the subscription lambda's capture is safe regardless of
+`sensors_`'s own reallocation, since `vector<unique_ptr<T>>` reallocating
+only moves the `unique_ptr` *pointers*, not the heap-allocated `T` objects
+they point to — `sensors_.reserve()` is for efficiency, not correctness
+here (documented in the header anyway, since the plan calls it out as a
+requirement).
+
+**Legacy mode is exact.** `legacy_input` (topic `"pointcloud"`,
+`freespace_topic` from `use_freespace_pointcloud_`, `frame = sensor_frame_`,
+etc.) is built from precisely the same top-level param reads as before,
+just relocated from scattered points in the old constructor into one block;
+`loadSensors()` with `sensor_names` unset returns it unchanged as the sole
+`"default"` sensor. `getNextPointcloudFromQueue()` and the new
+`processPointCloudMessageAndInsert(..., sensor)` now call
+`transformer_.lookupSensorTransform(from_frame, T_B_C_or_null, stamp, &T)`
+(Phase 3's API) instead of the old `lookupTransform(from, to, stamp, T)` —
+traced through both code paths (TF mode: same `world_frame_` value read
+independently by both `Transformer` and the server from the same param, so
+identical; queue mode: `T_B_C_or_null == nullptr` routes to the exact same
+`lookupTransformQueue(stamp, T_B_C_, T)` call as before) to confirm this is
+a no-op for legacy mode before writing a line of the actual swap.
+**`test_legacy_golden_tsdf` passed exactly on the first build** — no
+iteration needed — and the 5 pre-existing smoke launch tests (which start
+real `voxblox_server`/`fiesta_server`/`voxedt_server`/etc. executables, all
+`TsdfServer` subclasses) passed too, confirming the derived servers work
+unmodified.
+
+**M9 (body pose)** implemented here, reusing Phase 3's
+`lookupSensorTransform` with a neat trick: passing an **identity**
+`Transformation` as `T_B_C_or_null` when looking up `body_frame_` gives
+`T_G_D * T_B_D^-1 * Identity = T_G_D * T_B_D^-1 = T_G_B` in queue mode
+(exactly the M9 formula), while in TF mode the same call just resolves
+`body_frame_` via TF directly (the passed extrinsic is ignored there) — one
+code path handles both, no new `Transformer` method needed. `body_frame_`
+empty (default) leaves `T_pose == T_G_C`, so `removeDistantBlocks`/
+`clearDistantMesh`/`newPoseCallback` are byte-identical to before in legacy
+mode.
+
+**M10** (robot marker, primary sensor only) is a single
+`sensor == sensors_[0].get()` check around the existing
+`publishRobotMesh()` call — trivially "every cloud" in legacy mode since
+there's only one sensor.
+
+**M11** (ICP guard): `enable_icp_ && loaded_sensors.size() > 1` →
+`RCLCPP_ERROR` + `enable_icp_ = false`, checked before `icp_transform_pub_`
+would be created.
+
+**`test/test_multi_sensor_server.cc`** (new, 5 cases, all named in the
+plan): the **equivalence** test — two sensors with identical config fed the
+same 20-frame box-room sequence alternately, versus one legacy sensor fed
+the same sequence on one topic — passed exactly, confirming M3's claim that
+splitting integration across separate `MergedTsdfIntegrator` instances
+(each finishing its own `updateLayerWithStoredBlocks()` before returning)
+gives bit-identical results to one instance handling everything serially.
+Chose `method: merged` deliberately for this test, since M3 flags
+`FastTsdfIntegrator` as keeping per-stream state that legitimately *would*
+differ between 1 and 2 instances — that's not this test's concern.
+Different-extrinsics (`T_B_C` yaw 0 vs 180°, same world position — both
+sensors sit at the body origin so only the *look direction* differs) and
+different-ray-length cases use a small straight-ahead ray bundle rather
+than the full spherical scan, checking voxels near ±x via
+`Layer::getVoxelPtrByCoordinates()`. The throttle test exploits exactly the
+bug M4's per-sensor `last_msg_time` fixes: two sensors fed clouds at the
+*identical* stamp — if the throttle clock were still shared, the second
+sensor's message would see "0 seconds since the last (other sensor's)
+message" and be wrongly throttled; since each `SensorInput` starts its own
+clock at epoch, neither is.
+
+**Manual accept-criteria check** (real executables, not just gtest): built
+a temp params file with `sensor_names: [front, back]` and started
+`voxblox_server`, `fiesta_server`, and `voxedt_server` against it in turn;
+`ros2 node info` on each showed `/front/points` and `/back/points` as
+subscribers and **no** `pointcloud` topic, confirming the same multi-sensor
+wiring reaches every `TsdfServer`-derived executable, not just the base
+class under test.
+
+**Full suite:** `Summary: 143 tests, 0 errors, 0 failures, 4 skipped` (137
++ 5 new `test_multi_sensor_server` cases + 1 new CTest aggregate entry).
+`git status` after this phase touches only `tsdf_server.{h,cc}`,
+`CMakeLists.txt`, and the new test file.

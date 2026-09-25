@@ -1,6 +1,7 @@
 #include "voxfield_ros/tsdf_server.h"
 
 #include <chrono>
+#include <utility>
 
 #include "voxfield_ros/conversions.h"
 #include "voxfield_ros/kindr_conversions.h"
@@ -8,6 +9,23 @@
 #include "voxfield_ros/ros_params.h"
 
 namespace voxfield {
+namespace {
+
+std::unique_ptr<TsdfIntegratorBase> makeTsdfIntegrator(
+    const std::string& method, const TsdfIntegratorBase::Config& config,
+    Layer<TsdfVoxel>* layer) {
+  if (method.compare("simple") == 0) {
+    return std::make_unique<SimpleTsdfIntegrator>(config, layer);
+  } else if (method.compare("merged") == 0) {
+    return std::make_unique<MergedTsdfIntegrator>(config, layer);
+  } else if (method.compare("fast") == 0) {
+    return std::make_unique<FastTsdfIntegrator>(config, layer);
+  } else {
+    return std::make_unique<SimpleTsdfIntegrator>(config, layer);
+  }
+}
+
+}  // namespace
 
 TsdfServer::TsdfServer(rclcpp::Node::SharedPtr node)
     : TsdfServer(
@@ -37,9 +55,7 @@ TsdfServer::TsdfServer(
       accumulate_icp_corrections_(true),
       pointcloud_queue_size_(1),
       num_subscribers_tsdf_map_(0),
-      transformer_(node),
-      last_msg_time_ptcloud_(0, 0, RCL_ROS_TIME),
-      last_msg_time_freespace_ptcloud_(0, 0, RCL_ROS_TIME) {
+      transformer_(node) {
   getServerConfigFromRosParam();
 
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(node_);
@@ -57,19 +73,6 @@ TsdfServer::TsdfServer(
   tsdf_slice_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>(
       "~/tsdf_slice", kLatchedQos);
 
-  param(*node_, "pointcloud_queue_size", pointcloud_queue_size_);
-  bool input_qos_best_effort = false;
-  param(*node_, "input_qos_best_effort", input_qos_best_effort);
-  const rclcpp::QoS pointcloud_qos =
-      input_qos_best_effort
-          ? rclcpp::QoS(
-                rclcpp::SensorDataQoS().keep_last(
-                    static_cast<size_t>(pointcloud_queue_size_)))
-          : rclcpp::QoS(pointcloud_queue_size_);
-  pointcloud_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-      "pointcloud", pointcloud_qos,
-      std::bind(&TsdfServer::insertPointcloud, this, std::placeholders::_1));
-
   mesh_pub_ =
       node_->create_publisher<voxfield_msgs::msg::Mesh>("~/mesh", kLatchedQos);
 
@@ -84,15 +87,38 @@ TsdfServer::TsdfServer(
       "~/Robot_model", rclcpp::QoS(100));
   param(*node_, "publish_tsdf_map", publish_tsdf_map_);
 
-  if (use_freespace_pointcloud_) {
-    // points that are not inside an object, but may also not be on a surface.
-    // These will only be used to mark freespace beyond the truncation distance.
-    freespace_pointcloud_sub_ =
-        node_->create_subscription<sensor_msgs::msg::PointCloud2>(
-            "freespace_pointcloud", pointcloud_qos,
-            std::bind(
-                &TsdfServer::insertFreespacePointcloud, this,
-                std::placeholders::_1));
+  // MULTI_SENSOR_PLAN.md M2/M4: build the per-sensor configs (legacy: one
+  // "default" sensor from the top-level params below; multi-sensor: one per
+  // sensor_names entry, with per-sensor overrides on top of these same
+  // top-level params). Loading configs doesn't touch tsdf_map_, so this can
+  // run before it exists -- and must, so the M11 ICP guard right below can
+  // see the sensor count before icp_transform_pub_ would be created.
+  std::string method("merged");
+  param(*node_, "method", method);
+
+  SensorConfig legacy_input;
+  legacy_input.name = "default";
+  legacy_input.topic = "pointcloud";
+  legacy_input.freespace_topic =
+      use_freespace_pointcloud_ ? "freespace_pointcloud" : "";
+  legacy_input.frame = sensor_frame_;
+  legacy_input.queue_size = pointcloud_queue_size_;
+  param(*node_, "input_qos_best_effort", legacy_input.input_qos_best_effort);
+  {
+    double min_time_between_msgs_sec = 0.0;
+    param(*node_, "min_time_between_msgs_sec", min_time_between_msgs_sec);
+    legacy_input.min_time_between_msgs_sec = min_time_between_msgs_sec;
+  }
+
+  const std::vector<LoadedSensor> loaded_sensors = loadSensors(
+      *node_, &integrator_config, nullptr, nullptr, method, legacy_input);
+
+  // M11: ICP is not supported with multiple sensors.
+  if (enable_icp_ && loaded_sensors.size() > 1) {
+    RCLCPP_ERROR(
+        node_->get_logger(),
+        "ICP is not supported with multiple sensors; disabling");
+    enable_icp_ = false;
   }
 
   if (enable_icp_) {
@@ -103,24 +129,8 @@ TsdfServer::TsdfServer(
     param(*node_, "pose_corrected_frame", pose_corrected_frame_);
   }
 
-  // Initialize TSDF Map and integrator.
+  // Initialize the TSDF map and its (currently sensor-less) accessories.
   tsdf_map_.reset(new TsdfMap(config));
-
-  std::string method("merged");
-  param(*node_, "method", method);
-  if (method.compare("simple") == 0) {
-    tsdf_integrator_.reset(new SimpleTsdfIntegrator(
-        integrator_config, tsdf_map_->getTsdfLayerPtr()));
-  } else if (method.compare("merged") == 0) {
-    tsdf_integrator_.reset(new MergedTsdfIntegrator(
-        integrator_config, tsdf_map_->getTsdfLayerPtr()));
-  } else if (method.compare("fast") == 0) {
-    tsdf_integrator_.reset(new FastTsdfIntegrator(
-        integrator_config, tsdf_map_->getTsdfLayerPtr()));
-  } else {
-    tsdf_integrator_.reset(new SimpleTsdfIntegrator(
-        integrator_config, tsdf_map_->getTsdfLayerPtr()));
-  }
 
   mesh_layer_.reset(new MeshLayer(tsdf_map_->block_size()));
 
@@ -128,6 +138,45 @@ TsdfServer::TsdfServer(
       mesh_config, tsdf_map_->getTsdfLayerPtr(), mesh_layer_.get()));
 
   icp_.reset(new ICP(getICPConfigFromRosParam(*node_)));
+
+  // M3: one integrator instance per sensor, all on the shared layer.
+  sensors_.reserve(loaded_sensors.size());
+  for (const LoadedSensor& loaded : loaded_sensors) {
+    auto sensor = std::make_unique<SensorInput<TsdfIntegratorBase>>();
+    sensor->config = loaded.input;
+    sensor->integrator = makeTsdfIntegrator(
+        loaded.method, loaded.tsdf, tsdf_map_->getTsdfLayerPtr());
+    sensors_.push_back(std::move(sensor));
+  }
+
+  // Subscriptions last, among these, so no callback can fire before every
+  // sensor's integrator exists (M4).
+  for (std::unique_ptr<SensorInput<TsdfIntegratorBase>>& owned_sensor :
+       sensors_) {
+    SensorInput<TsdfIntegratorBase>* sensor = owned_sensor.get();
+    const rclcpp::QoS pointcloud_qos =
+        sensor->config.input_qos_best_effort
+            ? rclcpp::QoS(
+                  rclcpp::SensorDataQoS().keep_last(
+                      static_cast<size_t>(sensor->config.queue_size)))
+            : rclcpp::QoS(sensor->config.queue_size);
+    sensor->sub = node_->create_subscription<sensor_msgs::msg::PointCloud2>(
+        sensor->config.topic, pointcloud_qos,
+        [this, sensor](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+          insertPointcloud(msg, sensor);
+        });
+    if (!sensor->config.freespace_topic.empty()) {
+      // points that are not inside an object, but may also not be on a
+      // surface. These will only be used to mark freespace beyond the
+      // truncation distance.
+      sensor->freespace_sub =
+          node_->create_subscription<sensor_msgs::msg::PointCloud2>(
+              sensor->config.freespace_topic, pointcloud_qos,
+              [this, sensor](sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+                insertFreespacePointcloud(msg, sensor);
+              });
+    }
+  }
 
   // Advertise services.
   generate_mesh_srv_ = node_->create_service<std_srvs::srv::Empty>(
@@ -181,17 +230,11 @@ TsdfServer::TsdfServer(
 }
 
 void TsdfServer::getServerConfigFromRosParam() {
-  // Before subscribing, determine minimum time between messages.
-  // 0 by default.
-  double min_time_between_msgs_sec = 0.0;
-  param(*node_, "min_time_between_msgs_sec", min_time_between_msgs_sec);
-  min_time_between_msgs_ =
-      rclcpp::Duration::from_seconds(min_time_between_msgs_sec);
-
   param(*node_, "max_block_distance_from_body", max_block_distance_from_body_);
   param(*node_, "slice_level", slice_level_);
   param(*node_, "world_frame", world_frame_);
   param(*node_, "sensor_frame", sensor_frame_);
+  param(*node_, "body_frame", body_frame_);
   param(
       *node_, "publish_pointclouds_on_update", publish_pointclouds_on_update_);
   param(*node_, "publish_slices", publish_slices_);
@@ -243,6 +286,17 @@ void TsdfServer::getServerConfigFromRosParam() {
 void TsdfServer::processPointCloudMessageAndInsert(
     sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg,
     const Transformation& T_G_C, const bool is_freespace_pointcloud) {
+  if (sensors_.empty()) {
+    return;
+  }
+  processPointCloudMessageAndInsert(
+      pointcloud_msg, T_G_C, is_freespace_pointcloud, sensors_[0].get());
+}
+
+void TsdfServer::processPointCloudMessageAndInsert(
+    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg,
+    const Transformation& T_G_C, const bool is_freespace_pointcloud,
+    SensorInput<TsdfIntegratorBase>* sensor) {
   // Convert the PCL pointcloud into our awesome format.
 
   // Horrible hack fix to fix color parsing colors in PCL.
@@ -352,13 +406,14 @@ void TsdfServer::processPointCloudMessageAndInsert(
 
   if (verbose_) {
     RCLCPP_INFO(
-        node_->get_logger(), "Integrating a pointcloud with %lu points.",
-        points_C.size());
+        node_->get_logger(), "[%s] Integrating a pointcloud with %lu points.",
+        sensor->config.name.c_str(), points_C.size());
   }
 
   std::chrono::steady_clock::time_point start =
       std::chrono::steady_clock::now();
-  integratePointcloud(T_G_C_refined, points_C, colors, is_freespace_pointcloud);
+  integratePointcloud(
+      T_G_C_refined, points_C, colors, is_freespace_pointcloud, sensor);
   std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
   if (verbose_) {
     RCLCPP_INFO(
@@ -373,17 +428,42 @@ void TsdfServer::processPointCloudMessageAndInsert(
     updateMesh();
   }
 
+  // MULTI_SENSOR_PLAN.md M9: block removal / mesh clear-sphere /
+  // newPoseCallback() use the body's pose instead of the sensor's own when
+  // body_frame is set; "" (default) leaves T_pose == T_G_C, unchanged.
+  Transformation T_pose = T_G_C;
+  if (!body_frame_.empty()) {
+    Transformation T_G_B;
+    const Transformation identity_extrinsic;
+    if (transformer_.lookupSensorTransform(
+            body_frame_, &identity_extrinsic,
+            rclcpp::Time(pointcloud_msg->header.stamp, RCL_ROS_TIME),
+            &T_G_B)) {
+      T_pose = T_G_B;
+    } else {
+      RCLCPP_WARN_THROTTLE(
+          node_->get_logger(), *node_->get_clock(), 10000,
+          "Failed to look up body_frame '%s'; falling back to sensor '%s's "
+          "own pose for block removal / clear sphere / newPoseCallback.",
+          body_frame_.c_str(), sensor->config.name.c_str());
+    }
+  }
+
   // timing::Timer block_remove_timer("remove_distant_blocks");
   tsdf_map_->getTsdfLayerPtr()->removeDistantBlocks(
-      T_G_C.getPosition(), max_block_distance_from_body_);
+      T_pose.getPosition(), max_block_distance_from_body_);
   mesh_layer_->clearDistantMesh(
-      T_G_C.getPosition(), max_block_distance_from_body_);
+      T_pose.getPosition(), max_block_distance_from_body_);
   // block_remove_timer.Stop();
 
-  publishRobotMesh(T_G_C_refined);
+  // M10: the robot model marker follows the primary sensor only (in legacy
+  // mode that's every cloud, as today).
+  if (!sensors_.empty() && sensor == sensors_[0].get()) {
+    publishRobotMesh(T_G_C_refined);
+  }
 
   // Callback for inheriting classes.
-  newPoseCallback(T_G_C);
+  newPoseCallback(T_pose);
 }
 
 void TsdfServer::publishRobotMesh(const Transformation& T_G_C) {
@@ -420,6 +500,7 @@ void TsdfServer::publishRobotMesh(const Transformation& T_G_C) {
 
 // Checks if we can get the next message from queue.
 bool TsdfServer::getNextPointcloudFromQueue(
+    SensorInput<TsdfIntegratorBase>* sensor,
     std::queue<sensor_msgs::msg::PointCloud2::SharedPtr>* queue,
     sensor_msgs::msg::PointCloud2::SharedPtr* pointcloud_msg,
     Transformation* T_G_C) {
@@ -428,28 +509,31 @@ bool TsdfServer::getNextPointcloudFromQueue(
     return false;
   }
   *pointcloud_msg = queue->front();
-  // MULTI_SENSOR_PLAN.md F1/M5: Transformer used to silently substitute its
-  // own sensor_frame_ for whatever from_frame was passed in (if set), and
-  // an unset sensor_frame_ meant the lookup used frame "" and failed
-  // forever. Frame resolution now lives here: sensor_frame_ if set,
-  // otherwise the message's own header frame (upstream voxblox behavior).
-  const std::string& from_frame = sensor_frame_.empty()
+  // MULTI_SENSOR_PLAN.md F1/M5: an empty per-sensor frame falls back to the
+  // message's own header frame (upstream voxblox behavior) instead of
+  // failing forever.
+  const std::string& from_frame = sensor->config.frame.empty()
       ? (*pointcloud_msg)->header.frame_id
-      : sensor_frame_;
-  if (transformer_.lookupTransform(
-          from_frame, world_frame_,
-          rclcpp::Time((*pointcloud_msg)->header.stamp, RCL_ROS_TIME), T_G_C)) {
+      : sensor->config.frame;
+  const Transformation* T_B_C_or_null =
+      sensor->config.has_T_B_C ? &sensor->config.T_B_C : nullptr;
+  if (transformer_.lookupSensorTransform(
+          from_frame, T_B_C_or_null,
+          rclcpp::Time((*pointcloud_msg)->header.stamp, RCL_ROS_TIME),
+          T_G_C)) {
     queue->pop();
     return true;
   } else {
     if (queue->size() >= kMaxQueueSize) {
       RCLCPP_ERROR_THROTTLE(
           node_->get_logger(), *node_->get_clock(), 60000,
-          "Input pointcloud queue getting too long! Dropping "
+          "[%s] Input pointcloud queue getting too long! Dropping "
           "some pointclouds. Either unable to look up transform "
-          "timestamps or the processing is taking too long.");
+          "timestamps or the processing is taking too long.",
+          sensor->config.name.c_str());
       while (queue->size() >= kMaxQueueSize) {
         queue->pop();
+        ++sensor->num_dropped;
       }
     }
   }
@@ -457,23 +541,38 @@ bool TsdfServer::getNextPointcloudFromQueue(
 }
 
 void TsdfServer::insertPointcloud(
-    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg_in) {
+    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud) {
+  if (sensors_.empty()) {
+    return;
+  }
+  insertPointcloud(pointcloud, sensors_[0].get());
+}
+
+void TsdfServer::insertPointcloud(
+    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg_in,
+    SensorInput<TsdfIntegratorBase>* sensor) {
+  ++sensor->num_received;
   const rclcpp::Time stamp(pointcloud_msg_in->header.stamp, RCL_ROS_TIME);
-  if (stamp - last_msg_time_ptcloud_ > min_time_between_msgs_) {
-    last_msg_time_ptcloud_ = stamp;
+  const rclcpp::Duration min_time_between_msgs =
+      rclcpp::Duration::from_seconds(sensor->config.min_time_between_msgs_sec);
+  if (stamp - sensor->last_msg_time > min_time_between_msgs) {
+    sensor->last_msg_time = stamp;
     // So we have to process the queue anyway... Push this back.
-    pointcloud_queue_.push(pointcloud_msg_in);
+    sensor->queue.push(pointcloud_msg_in);
+  } else {
+    ++sensor->num_throttled;
   }
 
   Transformation T_G_C;
   sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg;
   bool processed_any = false;
-  while (
-      getNextPointcloudFromQueue(&pointcloud_queue_, &pointcloud_msg, &T_G_C)) {
+  while (getNextPointcloudFromQueue(
+      sensor, &sensor->queue, &pointcloud_msg, &T_G_C)) {
     constexpr bool is_freespace_pointcloud = false;
     processPointCloudMessageAndInsert(
-        pointcloud_msg, T_G_C, is_freespace_pointcloud);
+        pointcloud_msg, T_G_C, is_freespace_pointcloud, sensor);
     processed_any = true;
+    ++sensor->num_integrated;
   }
 
   if (!processed_any) {
@@ -499,29 +598,51 @@ void TsdfServer::insertPointcloud(
 }
 
 void TsdfServer::insertFreespacePointcloud(
-    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg_in) {
+    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud) {
+  if (sensors_.empty()) {
+    return;
+  }
+  insertFreespacePointcloud(pointcloud, sensors_[0].get());
+}
+
+void TsdfServer::insertFreespacePointcloud(
+    sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg_in,
+    SensorInput<TsdfIntegratorBase>* sensor) {
   const rclcpp::Time stamp(pointcloud_msg_in->header.stamp, RCL_ROS_TIME);
-  if (stamp - last_msg_time_freespace_ptcloud_ > min_time_between_msgs_) {
-    last_msg_time_freespace_ptcloud_ = stamp;
+  const rclcpp::Duration min_time_between_msgs =
+      rclcpp::Duration::from_seconds(sensor->config.min_time_between_msgs_sec);
+  if (stamp - sensor->last_freespace_msg_time > min_time_between_msgs) {
+    sensor->last_freespace_msg_time = stamp;
     // So we have to process the queue anyway... Push this back.
-    freespace_pointcloud_queue_.push(pointcloud_msg_in);
+    sensor->freespace_queue.push(pointcloud_msg_in);
   }
 
   Transformation T_G_C;
   sensor_msgs::msg::PointCloud2::SharedPtr pointcloud_msg;
   while (getNextPointcloudFromQueue(
-      &freespace_pointcloud_queue_, &pointcloud_msg, &T_G_C)) {
+      sensor, &sensor->freespace_queue, &pointcloud_msg, &T_G_C)) {
     constexpr bool is_freespace_pointcloud = true;
     processPointCloudMessageAndInsert(
-        pointcloud_msg, T_G_C, is_freespace_pointcloud);
+        pointcloud_msg, T_G_C, is_freespace_pointcloud, sensor);
   }
 }
 
 void TsdfServer::integratePointcloud(
     const Transformation& T_G_C, const Pointcloud& ptcloud_C,
     const Colors& colors, const bool is_freespace_pointcloud) {
+  if (sensors_.empty()) {
+    return;
+  }
+  integratePointcloud(
+      T_G_C, ptcloud_C, colors, is_freespace_pointcloud, sensors_[0].get());
+}
+
+void TsdfServer::integratePointcloud(
+    const Transformation& T_G_C, const Pointcloud& ptcloud_C,
+    const Colors& colors, const bool is_freespace_pointcloud,
+    SensorInput<TsdfIntegratorBase>* sensor) {
   CHECK_EQ(ptcloud_C.size(), colors.size());
-  tsdf_integrator_->integratePointCloud(
+  sensor->integrator->integratePointCloud(
       T_G_C, ptcloud_C, colors, is_freespace_pointcloud);
 }
 
