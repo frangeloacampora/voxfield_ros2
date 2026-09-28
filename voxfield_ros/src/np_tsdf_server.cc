@@ -397,8 +397,29 @@ void NpTsdfServer::processPointCloudMessageAndInsert(
   // Preprocess the point cloud: project to a range image, compute normals,
   // and back-project to a point cloud, using this sensor's own projector
   // (MULTI_SENSOR_PLAN.md M8).
+  const size_t num_points_raw = points_C.size();
   sensor->projector->process(points_C, colors, &points_C, &normals_C, &colors);
   range_pre_timer.Stop();
+  if (verbose_) {
+    // Phase 9 step 5 (plan §3.3): how many range-image points got a usable
+    // (non-zero) normal. computeNormalImage() leaves a zero normal where it
+    // found no valid neighbor, which is common for sparse Livox scans.
+    size_t num_valid_normals = 0;
+    for (const Point& n : normals_C) {
+      if (n.squaredNorm() > 1e-12f) {
+        ++num_valid_normals;
+      }
+    }
+    RCLCPP_INFO(
+        node_->get_logger(),
+        "[%s] Range image: %zu -> %zu points, %zu with a valid normal "
+        "(%.1f%%).",
+        sensor->config.name.c_str(), num_points_raw, points_C.size(),
+        num_valid_normals,
+        points_C.empty() ? 0.0
+                         : 100.0 * static_cast<double>(num_valid_normals) /
+                               static_cast<double>(points_C.size()));
+  }
 
   // ICP based pose refinement
   Transformation T_G_C_refined = T_G_C;
@@ -623,6 +644,17 @@ void NpTsdfServer::insertPointcloud(
         pointcloud_msg, T_G_C, is_freespace_pointcloud, sensor);
     processed_any = true;
     ++sensor->num_integrated;
+  }
+
+  // MULTI_SENSOR_PLAN.md M4 / Phase 9 step 4: per-sensor counters, logged
+  // (verbose only) once per callback so real-bag runs can check that every
+  // sensor keeps up and nothing is dropped after TF warm-up.
+  if (verbose_) {
+    RCLCPP_INFO(
+        node_->get_logger(),
+        "[%s] stats: received=%zu throttled=%zu dropped=%zu integrated=%zu",
+        sensor->config.name.c_str(), sensor->num_received,
+        sensor->num_throttled, sensor->num_dropped, sensor->num_integrated);
   }
 
   if (!processed_any) {

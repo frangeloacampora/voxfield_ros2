@@ -2,20 +2,29 @@
 # (MULTI_SENSOR_PLAN.md §7.5, §8 Phase 8 step 4). Loaded together with
 # athena_param.yaml (map-global params) by multi_sensor_mapping.launch.py.
 #
-# `fov_up`/`fov_down` are PLACEHOLDERS: §3.3 of the plan says to measure
-# the real Livox pitch range from the bag (Phase 9 step 1) and update
-# these before relying on this file for a real run. `sensor_is_lidar`/
-# `width`/`height`/`fov_up`/`fov_down` are top-level here (not per-sensor)
-# because both LiDARs share the same model (M2 inheritance) -- neither
-# `sensors.front_lidar.*` nor `sensors.back_lidar.*` needs to repeat them.
+# `fov_up`/`fov_down` are measured from the real bag (Phase 9 step 1, via
+# a rosbag2_py scan of 50 clouds/LiDAR, see docs/MULTI_SENSOR_NOTES.md):
+# front pitch in [-7.739, 53.017] deg, back pitch in [-7.312, 51.847] deg.
+# `fov_up: 53.5`/`fov_down: -8.0` cover both with margin.
+# `sensor_is_lidar`/`width`/`height`/`fov_up`/`fov_down` are top-level here
+# (not per-sensor) because both LiDARs share the same model (M2
+# inheritance) -- neither `sensors.front_lidar.*` nor `sensors.back_lidar.*`
+# needs to repeat them.
 /**:
   ros__parameters:
     sensor_names: [front_lidar, back_lidar]
     sensor_is_lidar: true
-    fov_up: 52.0   # placeholder -- measure from the bag, Phase 9 step 1
-    fov_down: -7.0  # placeholder -- measure from the bag, Phase 9 step 1
+    fov_up: 53.5
+    fov_down: -8.0
+    # 360 x 32 with normals on: chosen in Phase 9 step 5 (docs/
+    # MULTI_SENSOR_NOTES.md). On the real bag it scores the same as 360 x 32
+    # without normals and better than 1440 x 128 (74 % vs 66 % of raw
+    # returns within 0.2 m of the mesh) at ~60 % of the integration
+    # cost. athena_param.yaml doesn't set normal_available, so without
+    # this line it would fall back to the library default, false.
     width: 360
     height: 32
+    normal_available: true
     sensors:
       front_lidar:
         topic: /athena/front_lidar/points_raw_livox

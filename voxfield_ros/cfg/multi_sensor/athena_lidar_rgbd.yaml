@@ -4,8 +4,8 @@
 # `rgbd:=true` so the launch file's compressedDepth -> raw -> point cloud
 # pipeline actually publishes `/athena/{front,back}_rgbd/points`.
 #
-# `fov_up`/`fov_down` are still PLACEHOLDERS for the two LiDARs -- see
-# athena_dual_lidar.yaml's comment; measure from the bag, Phase 9 step 1.
+# `fov_up`/`fov_down` for the two LiDARs are measured from the real bag
+# (Phase 9 step 1) -- see athena_dual_lidar.yaml's comment for the numbers.
 #
 # Camera intrinsics (fx/fy/vx=cx/vy=cy) are read directly from this
 # machine's bag (`/athena/{front,back}_rgbd/depth/camera_info`, §3 of the
@@ -18,10 +18,19 @@
   ros__parameters:
     sensor_names: [front_lidar, back_lidar, front_rgbd, back_rgbd]
     sensor_is_lidar: true
-    fov_up: 52.0   # placeholder -- measure from the bag, Phase 9 step 1
-    fov_down: -7.0  # placeholder -- measure from the bag, Phase 9 step 1
+    fov_up: 53.5
+    fov_down: -8.0
+    # 360 x 32 with normals on: chosen in Phase 9 step 5 (docs/
+    # MULTI_SENSOR_NOTES.md). On the real bag it scores the same as 360 x 32
+    # without normals and better than 1440 x 128 (74 % vs 66 % of raw
+    # returns within 0.2 m of the mesh) at ~60 % of the integration
+    # cost. athena_param.yaml doesn't set normal_available, so without
+    # this line it would fall back to the library default, false. The
+    # RGB-D cameras inherit it too; their dense depth images give normals
+    # readily.
     width: 360
     height: 32
+    normal_available: true
     sensors:
       front_lidar:
         topic: /athena/front_lidar/points_raw_livox

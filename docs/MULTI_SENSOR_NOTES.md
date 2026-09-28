@@ -20,12 +20,16 @@ voxfield_ros` + `colcon test-result --verbose`:
 Summary: 100 tests, 0 errors, 0 failures, 4 skipped
 ```
 
-The 4 skips are pre-existing and expected, per `docs/ROS2_PORT_NOTES.md`
-(~line 1279): the 4 non-`voxfield` methods' (`fiesta`, `np_tsdf`, `voxblox`,
-`voxedt`) slice/save/load subtest is intentionally skipped, mesh-only per the
-port plan; `test_smoke_voxfield` has 0 skips. This is the baseline every
-later phase is compared against — any regression here must be explained
-before continuing.
+The 4 skips are the 4 non-`voxfield` methods' (`fiesta`, `np_tsdf`,
+`voxblox`, `voxedt`) slice/save/load subtest in `test_smoke.launch.py`.
+`docs/ROS2_PORT_NOTES.md` (~line 1279) called them intentional
+("mesh-only per the plan"). **That was wrong:** slice and save/load
+coverage matters for every server, not just `voxfield`. The skips hid a real
+bug: `fiesta`/`voxedt` `~/save_map` → `~/load_map` always failed. Phase 9
+removed the skips and fixed the bug; see "Slice/save/load smoke coverage"
+there. From then on the suite has 0 skips. This is the baseline every later
+phase is compared against — any regression here must be explained before
+continuing.
 
 ## Phase 1: Golden regression tests for legacy mode
 
@@ -781,3 +785,450 @@ without and with `rgbd:=true`). `git status` after this phase touches
 `voxfield_ros/launch/multi_sensor_mapping.launch.py`,
 `voxfield_ros/cfg/multi_sensor/*.yaml`,
 `voxfield_ros/cfg/rviz/multi_sensor.rviz`.
+
+## Phase 9: Real-bag validation
+
+Every measurement below comes from `~/src/rosbag2_2026_09_23-14_32_47`
+(Athena robot: two Livox Mid-360-type LiDARs, two RGB-D cameras). The
+section was paused once for a handoff (steps 1–4 and part of step 5 were
+done then) and finished afterwards. Validation turned up three real bugs,
+all fixed here: the `fiesta`/`voxedt` save/load bug (below), the FIESTA/EDT
+memory blow-up (step 7), and a `Transformer` shutdown deadlock (after
+step 7).
+
+### Setup
+
+**Code kept from the handoff.** Two verbose-only logs in
+`tsdf_server.cc`/`np_tsdf_server.cc` are kept:
+- `[<sensor>] stats: received=N throttled=N dropped=N integrated=N`, once
+  per callback. These are M4's per-sensor counters, which the plan's M4
+  comment asked to log when verbose.
+- `[<sensor>] Range image: <raw> -> <kept> points, <n> with a valid
+  normal (<%>)` in `NpTsdfServer`. The plan called this "temporary", but it
+  is verbose-only and O(N), and it is the only way to see §3.3's
+  resolution/normal trade-off on real data (step 5), so it stays.
+
+**Scripts** (not in the repo, since they're specific to this bag and
+machine) are in `~/voxfield_phase9_handoff/`:
+- `p9run.sh <out_prefix> <binary> <rate> <bag_seconds> <server ros-args...>`
+  is the run driver. It is self-contained and deterministic:
+  - It starts the server with `verbose`/`timing` on, `mesh_filename=<out>.ply`, `__node:=voxfield_node`, and `/tf`/`/tf_static` remapped to `/athena/...`.
+  - It plays **only** the 2 LiDAR + TF topics with `--playback-duration`, so it runs for a fixed amount of *bag* time.
+  - It waits `P9_DRAIN` seconds, then calls `save_map` and `generate_mesh` with retries.
+  - It grabs the latched `esdf_slice`/`tsdf_slice` into `.npy` using `grab_slices.py`.
+  - It samples RSS every 2 s into `<out>.rss`, with a watchdog kill at 18 GB (**no cgroup cap**, per the user's correction). It also logs VmHWM.
+  - It `pkill`s any running server first, so **never run two drivers at once**. Run it from `bash` (zsh doesn't word-split `set -- $wh` in loops). Don't put `pkill -f install/voxfield_ros/...` in the same shell command as other work: the pattern matches the calling shell's own command line and kills it.
+- `p9run_rgbd.sh <out_prefix> <method> <rate> <bag_seconds>` does the same
+  through `multi_sensor_mapping.launch.py rgbd:=true`, which provides the
+  compressedDepth → points chain. `P9_SENSORS=<yaml>` swaps the sensor file.
+- `parse.py <log>...` prints per-sensor integration ms, rate, final stats line, range-image and valid-normal fractions, and the final timing table.
+- `raw_align.py <t0> <t1>` checks the step 3 extrinsics from raw clouds. It loads the TF and both LiDARs for that window, transforms the clouds into `map`, and reports front↔back point-to-plane residuals and a linearized 6-DoF correction. It also computes a front-vs-front baseline.
+- `consistency.py` does mesh-vs-mesh nearest-neighbour and ICP between the (a), (b), and (c) PLYs.
+- `mesh_quality.py <name>=<ply>...` computes step 5's accuracy/completeness metric. `render.py` makes the `docs/assets/multi_sensor_*.png` figures.
+- `traj_scan.py` prints the robot trajectory. `measure_livox_geometry.py` and `tf_scan.py` are from step 1.
+- Run the Python scripts with **`/usr/bin/python3`** inside `bash -c 'source /opt/ros/jazzy/setup.bash && ...'`. Conda's `python3` is first on `PATH` and can't import `rosbag2_py`.
+- Logs, RSS traces and slices: `runs/` (handoff-era runs) and `work/` (later runs). Maps/PLYs: `maps/` and `work/`.
+
+**Environment.** The user retracted the memory-cap instruction (§0.7 /
+pitfall 13) for this phase, so all runs are **uncapped** with the RSS
+watchdog. Before the step 7 fix, the watchdog killed `fiesta_server` and
+`voxedt_server`. After it, peak RSS was 1.5–8.0 GB.
+
+**Trajectory** (from `traj_scan.py`, `odom → base_footprint_link`; `map → odom` is about identity, within 0.1 m):
+- 0–12 s: the robot is stationary at (30.2, −13.7).
+- 12–60 s: it drives about 10 m with a yaw change of about 80°.
+- It then continues for about 60 m up and down a ramp (z from −0.7 to +3 m) and returns to its start area.
+- It is stationary again from about 380 s.
+
+Every run below uses `--start-offset 0 --playback-duration 60`. A nonzero
+offset would skip the `/tf_static` messages at the start of the bag.
+
+### Slice/save/load smoke coverage for every method
+The 4 skipped `test_smoke_<method>` subtests (Phase 0) were a coverage gap,
+not an intended design. `test_slice_and_map_roundtrip` now runs for every
+method:
+- `~/tsdf_slice` must publish a non-empty cloud for all 5 methods.
+- `~/esdf_slice` must also publish one for the ESDF servers (`voxfield`,
+  `voxblox`, `fiesta`, `voxedt`).
+- A `~/save_map` → `~/load_map` round trip through a temp file must succeed
+  (`Successfully loaded TSDF layer.` and no `Failed to load map`).
+- For `np_tsdf` the test also sets `publish_pointclouds: true`.
+  `NpTsdfServer` publishes slices only from `publishPointclouds()`, and
+  `kitti_param.yaml` turns that off. The ESDF servers publish slices from
+  their ESDF timer instead.
+
+**Bug found and fixed:** `FiestaServer` and `VoxedtServer` never overrode
+`saveMap()`. `~/save_map` fell through to `TsdfServer::saveMap()` and wrote
+a TSDF-only file, but their own `loadMap()` reads TSDF and then ESDF. Every
+load therefore failed on the ESDF half ("Layer type of the loaded map is:
+esdf but the current map is: tsdf check passed? 0", then `Failed to load
+map`). This is the mirror image of "Known upstream issues" #11 in
+`docs/ROS2_PORT_NOTES.md`, and it gets the same fix: `saveMap()` writes
+TSDF (truncating) and then appends ESDF. Their `saveEsdfMap()`/
+`saveOccMap()` also now truncate (`kClearFile = true`), like
+`VoxbloxServer::saveEsdfMap()`. Each writes its own file (`~/save_esdf_map`,
+`~/save_occ_map`, and `saveAllMap()`'s `.esdf`/`.occ`), so appending only
+left stale content first in the file on a re-save.
+
+Tests:
+- `test_server_map_io.cc` is now built for `fiesta` and `voxedt` too
+  (`test_{fiesta,voxedt}_server_map_io`, via `TEST_{FIESTA,VOXEDT}_SERVER`).
+- Negative check: with `FiestaServer::saveMap()` temporarily reverted to
+  TSDF-only, both `test_fiesta_server_map_io` (`SaveLoadRoundTrip`) and
+  `test_smoke_fiesta` fail as described above. With the fix, both pass.
+
+**Full suite:** `Summary: 164 tests, 0 errors, 0 failures, 0 skipped`. This
+run includes the two verbose-only logs from the handoff below.
+
+### Step 1: Livox geometry
+Measured with a `rosbag2_py` script over 50 clouds per LiDAR:
+- Front LiDAR pitch: −7.739° to 53.017°.
+- Back LiDAR pitch: −7.312° to 51.847°.
+- Config set to `fov_up: 53.5` and `fov_down: −8.0`, which covers both with some margin.
+
+A new finding while checking step 5: each cloud has about 20 000 points,
+but **about 38 % of them are at the origin** (r < 0.1 m; the Livox driver
+emits (0,0,0) placeholders for no-return). **About 45 % have r < 0.3 m**,
+and about 11 % lie between 0.1 m and 1 m. That last band is likely the
+robot body and mounts seen by the LiDAR itself (pitfall 11). The median
+range is about 1.1 m. `min_ray_length_m: 0.3` already drops the
+placeholders and the closest self-hits.
+
+**Do the 0.3–1 m self-hits leave obstacles next to the robot (pitfall 11)?
+No.** Checked on the voxblox (c), voxfield (i) and fiesta meshes:
+- At the start pose, where the robot is stationary for 12 s on flat
+  ground, there are 0–2 mesh vertices within 1 m horizontally and 0.15–1.5 m
+  above the footprint, all at dz ≈ 0.16 m (ground texture), against ~400
+  ground vertices.
+- At the 60 s pose (on the ramp), all vertices within 1 m fit a single
+  24–28° plane (voxfield median residual 1.5 cm, max 0.29 m, only 9 of 500
+  more than 0.2 m off).
+
+Nothing body-shaped persists. `min_ray_length_m: 0.3` drops the closest
+returns, and the remaining self-hits are carved away by rays from other
+poses.
+
+### Step 2: ray-casting fusion, `voxblox_server`
+Settings for these runs:
+- Rate 0.25 and 60 s of bag, so the server keeps up.
+- `update_esdf_every_n_sec: 0`, which turns ESDF off. The block count is TSDF-only, and ESDF would otherwise stall the executor (see step 4).
+- (a) and (b) run in **legacy mode**: no `sensor_names`, and `-r pointcloud:=/athena/<x>_lidar/points_raw_livox`. `sensor_frame` is empty, so the frame comes from the header (F1). (c) runs with `athena_dual_lidar.yaml`.
+
+| Run | Final blocks | Clouds integrated | RSS peak | PLY / TSDF |
+|---|---|---|---|---|
+| (a) front only | **8557** | 595 / 600 recv (2 dropped at TF warm-up) | 1.37 GB | 93 MB / 390 MB |
+| (b) back only | **8544** | 598 / 600 | 1.36 GB | 90 MB / 386 MB |
+| (c) both | **9445** | front 594/599, back 596/598 | 1.60 GB | 123 MB / 432 MB |
+
+The plan's expectation `max(a,b) < c ≤ a+b` holds: 8557 < 9445 ≤ 17101.
+The overlap is large because both Mid-360-type sensors see 360° in yaw,
+and `voxel_carving` allocates free-space blocks along every 30 m ray.
+The only ERROR line in each run is the expected `[front_lidar] Input
+pointcloud queue getting too long` during the first ~4 s while TF warms
+up (`map` doesn't exist yet). The saved files are in
+`~/voxfield_phase9_handoff/maps/vb_{a_front,b_back,c_both}.{tsdf,ply}`.
+Figure: `docs/assets/multi_sensor_voxblox.png` (left: the fused (c) mesh
+coloured by height; right: the start area with the raw front/back clouds
+over the fused mesh). This and the other Phase 9 figures are matplotlib
+top-down renders (`render.py`) rather than RViz2 screenshots. They are
+reproducible from the saved maps, and they don't open windows on the
+user's live `DISPLAY=:1` desktop, which a scripted `xwd` screenshot would
+need.
+
+### Step 3: consistency and extrinsics
+From `raw_align.py`: raw clouds from 40 front and 40 back sweeps,
+transformed into `map` with the bag's own TF, while the robot is
+stationary.
+
+| Window | Planar-overlap \|residual\| median / p90 | Front-vs-front baseline | Best rigid correction back→front |
+|---|---|---|---|
+| 2–6 s | 0.024 / 0.111 m | 0.003 / 0.010 m | rot (−0.90, 1.23, −0.21)°, t 0.023 m |
+| 6–10 s | 0.023 / 0.112 m | 0.004 / 0.012 m | rot (−0.77, 1.24, −0.27)°, t 0.036 m |
+| 392–398 s | 0.063 / 0.140 m | 0.004 / 0.014 m | rot (0.83, 0.91, −0.17)°, t 0.020 m |
+
+The residual grows with range: 0.02 m median at 0–6 m, 0.095 m at
+6–9 m, and 0.145 m at 9–12 m. That is the signature of an angular
+error, not a translation. Rotating the map-frame corrections into the
+robot's yaw at each window (64.7° and −14.7°) gives about (0.6–0.7°,
+1.1–1.3°) of roll and pitch in the **body** frame, consistent across the
+start and the end of the bag.
+
+**Conclusion:**
+- The bag's `/athena/tf_static` places the back LiDAR about 1.4° tilted relative to the front one.
+- The static extrinsics look CAD-nominal, because front and back are perfectly symmetric: `*_sensor_mount_link → *_lidar_link` is rpy (26.78°, 0, 180°), and `chassis_link → *_sensor_mount_link` is rpy (6.78°, 0, ±90°) at x = ±0.246 m.
+- This is a **calibration issue in the data**, not a code bug. The independent Python check uses the same TF chain as the server and sees the same thing.
+
+What this means for the fused map:
+- Within about 6 m, the two sensors agree to about 2 cm, well under the 0.1 m voxel. **No doubled walls near the robot.**
+- At 6–12 m, surfaces from the two sensors separate by about 1–1.5 voxels. That thickens distant walls and can double them faintly.
+
+Mesh-level cross-check from `consistency.py` (5 cm-deduplicated vertices):
+- Vertex nearest-neighbour distance between (a) and (b): median 0.10 m, p90 0.27–0.29 m.
+- (a)→(c): median 0.026 m. (b)→(c): median 0.014 m.
+- Vertex ICP between the two meshes gave |t| = 0.39 m, mostly along z. This is **not trustworthy**, because it slides along the dominant ground plane on sloped terrain. Use the raw-cloud result above instead.
+
+Figure: `docs/assets/multi_sensor_wall_slice.png`, the front-only (a) and
+back-only (b) mesh vertices in the z = 0.5 ± 0.05 m band, with 6 m / 12 m
+rings around the start. Inside 6 m the two coincide. Toward 12 m the
+right-hand wall visibly separates by about one voxel, matching the raw-cloud
+residuals above.
+
+Recommendation: calibrate the back LiDAR's extrinsic (about 1.4° of
+pitch/roll). Until then, the shipped `max_ray_length_m` of 12 m (step 4)
+also keeps most of the doubling out of the map.
+
+### Step 4: per-sensor stats, the M7 budget, and the real-time default
+From `parse.py`. Per-sensor integration time (`merged`, 6 threads,
+0.1 m voxels, 30 m rays): front **45.7 ms** mean (median 43, p95 58.5)
+and back **41.7 ms** mean (median 41, p95 53). The first few clouds take
+up to about 0.4 s.
+
+| Run (dual LiDAR, 60 s bag) | Front recv / integrated | Back recv / integrated | Rate |
+|---|---|---|---|
+| (c) rate 0.25, ESDF off | 599 / 594 | 598 / 596 | 10 Hz in bag time for each |
+| rate 1.0, ESDF off | **448 / 444** | **493 / 491** | 7.6 and 8.2 Hz |
+| rate 1.0, ESDF every 1 s (the shipped `athena_param.yaml`) | **38 / 36** | **33 / 32** | about 0.6 Hz |
+
+- `num_dropped` is 0–2 per sensor, and only during TF warm-up. The losses at rate 1.0 happen **at the DDS subscription** (`pointcloud_queue_size` 1) while the single-threaded executor is busy. `num_dropped` doesn't count those. Compare `received` with 600 offered.
+- **M7 budget:** 20 clouds/s × about 43.6 ms is about 0.87 s/s of TSDF alone, plus about 0.04 s/s of mesh updates. That is right at the 1 s/s limit, which is why about 20 % of clouds are lost even without ESDF.
+- **The ESDF is what really blows the budget.** `voxblox_server`'s ESDF update takes 3.2 s mean and 6.7 s max with `local_range_offset` 20/20/10 blocks, and it runs every 1 s. With the shipped config, only about 6 % of clouds get integrated in real time. RSS reached 6.1 GB. This isn't specific to multi-sensor: the ESDF works from TSDF blocks. A single LiDAR would suffer the same way.
+
+**Choosing the real-time default.** Two candidates at rate 1.0, 60 s of
+bag, both LiDARs, `athena_param.yaml` + `athena_dual_lidar.yaml`
+(`work/rt_*`, `work/rt2_*`). Received is out of 600 offered per sensor.
+
+| Candidate | Server | Received (front / back) | ESDF update mean (max) | Blocks | Peak RSS |
+|---|---|---|---|---|---|
+| 1: 30 m rays, ESDF every 5 s, `local_range_offset` 10/10/5, queue 10 | voxblox | 115 / 115 | 4.2 s (9.9) | 8662 | 6.9 GB |
+| 1 | voxfield | 173 / 173 | 7.8 s (15.3) | 8568 | 6.8 GB |
+| **2: 12 m rays, ESDF every 2 s, queue 10** | voxblox | 443 / 443 | 1.0 s (1.8) | 1875 | 1.6 GB |
+| **2** | voxfield | **558 / 563** | 0.9 s (1.9) | 1869 | 1.5 GB |
+
+- Candidate 1 barely helps. With 30 m rays, a single ESDF update takes
+  longer than the 5 s interval, and nothing else can run on the
+  single-threaded executor while it does. A shorter `local_range_offset`
+  doesn't shrink the work, because the ESDF still has to cover every TSDF
+  block the 30 m rays touch.
+- Candidate 2 cuts every stage: TSDF integration 30 ms (voxblox) / 16 ms
+  (voxfield) per cloud, and ESDF ~1 s. `voxfield_server` integrates
+  **~93 %** of clouds live (the rest are lost at the DDS queue during ESDF
+  updates). `voxblox_server` manages 74 %: its TSDF alone is ~0.6 s/s for
+  two LiDARs at 10 Hz, before the ESDF.
+- **Shipped** in `athena_param.yaml`: `max_ray_length_m: 12.0`,
+  `update_esdf_every_n_sec: 2.0`, `pointcloud_queue_size: 10`. The
+  trade-off is range: the map covers ~12 m around the trajectory (1.9 k
+  blocks instead of 9.4 k over this minute of bag). 12 m is also where the
+  back LiDAR's extrinsic error starts doubling walls (step 3). For offline
+  mapping at reduced playback speed, override `max_ray_length_m:=30.0`.
+  All the other runs in this section used 30 m, the value shipped before
+  this step.
+- A multi-threaded executor that runs the ESDF update off the
+  subscription thread would lift the budget further. That needs locking
+  between TSDF integration and the ESDF reading the TSDF layer, so it isn't
+  part of this plan.
+- A cosmetic note: every Livox cloud prints `Failed to find match for field 'intensity'`. The Livox `intensity` field is UINT8, and PCL's `PointXYZI` expects FLOAT32, so intensity/colour is dropped. Geometry isn't affected.
+
+### Step 5: `voxfield_server` with both LiDARs
+**Range-image resolution sweep.** Rate 0.5, 30 s of bag, ESDF off,
+`normal_available: true`. The valid-normal fraction doesn't depend on
+`normal_available`; it's computed in the projector. The percentages
+below are the fraction of the ~20 000 raw points that land in the
+image. Recall that only about 55 % of raw points are valid returns
+(r > 0.3 m).
+
+| width × height | Points kept (front / back) | Valid normals among kept | Integration ms (front / back) | Blocks |
+|---|---|---|---|---|
+| 360 × 32 | 30.4 % / 28.5 % (about 6 000) | **62–65 %** | 23.6 / 20.7 | 7429 |
+| 720 × 64 | 50.3 % / 47.9 % (about 9 800) | 11.5–11.8 % | 36.2 / 32.8 | 7526 |
+| 1440 × 128 | 57.9 % / 55.2 % (about 11 300, essentially every valid return) | 1.0–1.1 % | 39.1 / 36.4 | 7539 |
+
+This is the trade-off §3.3 predicted:
+- The coarse image keeps usable normals but throws away about 45 % of valid returns, because several points share each pixel.
+- The fine image keeps every return, but almost none of them get a normal.
+
+**Run (i): 360 × 32, `normal_available: true`.** Rate 0.25, 60 s of
+bag, `update_esdf_every_n_sec: 5`, and `pointcloud_queue_size: 200`.
+The deep queue is needed because each ~9 s ESDF update would otherwise
+drop clouds at the subscription. A first attempt without it received
+only 358 of 600 clouds.
+- 596 of 600 front and 598 of 600 back clouds integrated. Final blocks: **9185**.
+- Integration: 26.1 ms front and 23.9 ms back.
+- Voxfield ESDF update: **9.2 s** mean over 12 updates.
+- RSS peak: **7.3 GB**.
+- The ESDF and TSDF slices were captured with 130 k points each.
+- Files: `~/voxfield_phase9_handoff/maps/vf_i_360_nt.{tsdf,ply}` and `runs/vf_i_360_nt.{esdf,tsdf}_slice.npy`.
+
+**Runs (ii) and (iii)** use the same command as (i), changing only
+`normal_available` and `width`/`height`:
+- (ii) 360 × 32, `normal_available: false` (the plan's literal comparison).
+- (iii) 1440 × 128, `normal_available: false`. With normals off, a coarse
+  image only loses points, so this is the natural pairing.
+
+| Run | Integrated (front / back) | Integration ms (front / back) | ESDF mean | Blocks | Peak RSS |
+|---|---|---|---|---|---|
+| (i) 360 × 32, normals on | 596 / 598 | 26.1 / 23.9 | 9.2 s | 9185 | 7.3 GB |
+| (ii) 360 × 32, normals off | 596 / 598 | 25.3 / 23.1 | 8.7 s | 9185 | 7.3 GB |
+| (iii) 1440 × 128, normals off | 596 / 598 | 44.1 / 41.4 | 9.4 s | 9445 | 7.5 GB |
+
+**Mesh quality** (`mesh_quality.py`). The reference is the stationary raw
+clouds from both LiDARs at t = 2–6 s (`runs/rawF_2.npy`/`rawB_2.npy`,
+already in `map`, 2 cm-deduplicated), scored within 1–8 m horizontally
+of the start position, where step 3 showed the two LiDARs agree to
+~2 cm. Accuracy is the mesh-vertex → nearest-raw-point distance. Vertices
+more than 0.5 m from any raw point are counted as "unsupported" (surfaces
+first seen later in the run). Completeness is the fraction of raw points
+with a mesh vertex within 0.1 m (one voxel) / 0.2 m.
+
+| Mesh | Accuracy median / p90 | Unsupported | Completeness 0.1 m / 0.2 m |
+|---|---|---|---|
+| voxblox (c), reference | 0.126 / 0.354 m | 29.0 % | 58.9 % / **82.2 %** |
+| voxfield (i) 360 × 32, normals on | **0.103** / 0.304 m | 29.2 % | 57.8 % / 74.3 % |
+| voxfield (ii) 360 × 32, normals off | 0.104 / 0.302 m | 28.7 % | 57.9 % / 74.0 % |
+| voxfield (iii) 1440 × 128, normals off | 0.116 / 0.350 m | 32.9 % | 53.2 % / 66.3 % |
+
+- (i) and (ii) are indistinguishable. At 360 × 32, the normals neither
+  help nor hurt the mesh near the robot on this data.
+- (iii) keeps nearly twice as many points and still scores **worse** on
+  every metric, at ~1.7× the integration cost. A plausible explanation, not verified:
+  with only ~1 % valid normals and one return per pixel, the fine image
+  spreads single noisy hits over more voxels instead of averaging several
+  per pixel.
+- voxfield is ~2 cm more accurate than voxblox's ray casting, and voxblox is
+  more complete within 0.2 m. The median accuracy of ~0.1 m is about one
+  voxel. Marching-cubes vertices sit on voxel edges, so this is near the
+  floor for 0.1 m voxels.
+
+**Default chosen:** 360 × 32 with `normal_available: true`, set explicitly
+in `athena_dual_lidar.yaml` and `athena_lidar_rgbd.yaml`, where it sits
+next to the resolution it depends on. Quality equals (ii), the cost is the
+same, and it matches every other `cfg/param/*.yaml`. Before this,
+`athena_param.yaml` didn't set it, so the effective value was the library
+default, `false`.
+
+Figure: `docs/assets/multi_sensor_voxfield.png` (run (i): mesh vertices
+and the latched ESDF slice at z = 0.55 m).
+
+Command for (i):
+```
+bash -c 'S=~/voxfield_phase9_handoff; C=~/src/voxfield_ros2/voxfield_ros/cfg/multi_sensor
+P9_DRAIN=30 bash $S/p9run.sh /tmp/vf_i voxfield_server 0.25 60 --params-file $C/athena_param.yaml \
+  --params-file $C/athena_dual_lidar.yaml -p update_esdf_every_n_sec:=5.0 -p normal_available:=true \
+  -p pointcloud_queue_size:=200'
+```
+
+### Step 6: RGB-D
+Run through `multi_sensor_mapping.launch.py rgbd:=true` (`p9run_rgbd.sh`):
+`voxfield_server`, rate 0.25, 60 s of bag, `athena_lidar_rgbd.yaml` (both
+LiDARs plus both cameras), ESDF every 5 s, queue 200 (`work/rgbd_vf.*`).
+
+- All 4 sensors integrate. The LiDARs are unchanged from run (i) (596 / 597
+  of 599). Each camera received ~267 decoded clouds, throttled 140 of them
+  (`min_time_between_msgs_sec: 0.4`) and integrated 126, at 12.5–13.6 ms
+  per ~170 k-point cloud. Rays are capped at 4 m and the `merged`
+  integrator bundles points per voxel, which is why the cost is lower than
+  for the 6 k-point LiDAR clouds with 30 m rays.
+- 99 % of camera points get a valid normal in the range image (dense
+  640 × 480 depth), against ~65 % for the LiDARs.
+- The map, mesh and slices were saved. Peak RSS was 7.4 GB, the same as
+  LiDAR-only.
+- Noise, not a problem: each `depth_image_proc::PointCloudXyzNode` logs
+  `image_transport ... do not appear to be synchronized` every 10 s. The
+  bag has depth at 4.5 Hz but `camera_info` at 30 Hz. Every depth image has
+  a `camera_info` with the identical stamp (checked over 201 images), so
+  every image is paired and the warning is only about the unequal counts.
+
+**Are the cameras placed correctly?** A second run with only the two
+cameras (`sensor_names: [front_rgbd, back_rgbd]`, `work/rgbd_only_vf.*`)
+gave 30 blocks and 2229 mesh vertices (2 cm-deduplicated). Their distance to
+the LiDAR-only run (i)'s mesh: median **0.044 m**, p90 0.078 m, 97.9 %
+within one voxel. So the camera intrinsics, the TF chain and the
+compressedDepth → points pipeline all put surfaces where the LiDARs see
+them. In the 4-sensor map, the cameras add almost nothing (42 of 447 k
+vertices are > 15 cm from the LiDAR-only mesh). Everything within the
+cameras' 4 m range is already covered by the two 360° LiDARs as the robot
+moves, and the step 5 metric scores the two maps identically. On this robot
+the cameras' value would be close-range detail below the LiDARs' −8°
+field of view, which this 60 s window doesn't exercise.
+
+(A first RGB-D-only attempt aborted at start-up with M13's `'sensors.
+back_lidar.topic' names sensor 'back_lidar', which is not in sensor_names`.
+That was the test YAML still carrying the LiDAR entries: validation
+working as designed.)
+
+### Step 7: `fiesta_server` / `voxedt_server`
+One dual-LiDAR run of each: rate 0.25, 60 s of bag,
+`pointcloud_queue_size:=200`, ESDF every 1 s (30 m rays, as shipped
+before step 4).
+
+**First attempt: both killed at 18 GB.** RSS jumped to ~16 GB within the
+first 20 s of wall time, while TSDF layer memory was only ~0.77 GB. The
+cause was the dense ESDF allocation in `EsdfOcc{Fiesta,Edt}Integrator::
+setLocalRange()`. It's the FIESTA/EDT twin of "Known upstream issues" #12,
+which Phase 12 had fixed only in the Voxfield integrator. With 30 m rays
+pitched up to 53°, a single update's bounding box is ~38 × 38 × 25 blocks
+of ~0.4 MB (`EsdfVoxel` is ~100 B). **Fixed** with the user's
+authorization. Details and the bit-for-bit equivalence test
+(`voxfield/test/test_esdf_occ_integrators.cc`) are in
+`docs/ROS2_PORT_NOTES.md` "Known upstream issues" #13.
+
+**With the fix** (`work/s7fix_*`):
+
+| Server | Integrated (front / back of 600) | Dropped | ESDF update mean (max) | Blocks | Peak RSS |
+|---|---|---|---|---|---|
+| fiesta | 585 / 586 | 12 / 12 | 3.6 s (10.2) | 9448 | 8.0 GB |
+| voxedt | 441 / 448 | 156 / 150 | 7.8 s (16.4) | 9231 | 7.7 GB |
+
+- Both save the map (`save_map`) and mesh, and publish non-empty ESDF/TSDF
+  slices (128–137 k points). The only ERROR line is the TF warm-up
+  `queue getting too long` one.
+- `voxedt`'s drops are overload, not a bug. Its ESDF update (7.8 s mean)
+  takes longer than its 1 s bag-time interval (4 s wall at rate 0.25). The
+  backlog grows until queued clouds are older than tf2's 10 s cache, and
+  those TF lookups fail (`num_dropped` counts only clouds dropped after a
+  failed TF lookup with 10 already queued). The shipped real-time config
+  (step 4) makes ESDF updates ~1 s.
+- Figure: `docs/assets/multi_sensor_fiesta.png` (mesh and ESDF slice). Its
+  ESDF matches voxfield's (`multi_sensor_voxfield.png`).
+
+### A shutdown deadlock in `Transformer` (found by a flaky test)
+A full `colcon test` run once hit a 60 s timeout in
+`TransformerMulti.RetentionWindowErasesOnlyOldEntries`. The test body
+can't block. The hang was `tf2_ros::TransformListener(buffer)`'s
+destructor. That constructor makes its own node and spins it on a
+dedicated thread, and the destructor calls `executor_->cancel()` and then
+`join()`. If the `Transformer` is destroyed before that thread has entered
+`spin()`, rclcpp's `Executor::spin()` still starts spinning afterwards
+and the cancel is lost, so `join()` waits forever. Tests that build and
+destroy a `Transformer` within milliseconds hit it occasionally. So would
+a server shut down right after start-up. **Fixed:** `Transformer` now owns
+the thread. The listener is attached to the server's own node with
+`spin_thread=false`, and its `/tf`/`/tf_static` subscriptions (default
+listener QoS and options) go in a callback group that isn't added to the
+node's executor. That's the same isolation as the listener's own
+spin-thread mode, so TF still arrives during long ESDF updates.
+`~Transformer()` retries `cancel()` until the thread has really left
+`spin()`. New test `TransformerMulti.ImmediateDestructionDoesNotHang`
+builds and destroys 300 `Transformer`s: against the old code it hung 5 of 5
+runs (30 s timeout), and with the fix the whole suite passes 10 of 10 runs
+in 0.9 s.
+
+### Wrap-up
+- **Bugs found and fixed in this phase:**
+  - The `fiesta`/`voxedt` `~/save_map` → `~/load_map` round trip always
+    failed, hidden by the 4 "intentionally" skipped smoke subtests.
+  - The FIESTA/EDT dense ESDF allocation used ~16 GB on the first update
+    ("Known upstream issues" #13).
+  - The `Transformer`/`tf2_ros::TransformListener` shutdown deadlock.
+- **Config changes:**
+  - Measured `fov_up`/`fov_down` (step 1).
+  - `normal_available: true` at 360 × 32 (step 5).
+  - Real-time `athena_param.yaml`: 12 m rays, ESDF every 2 s, queue 10
+    (step 4).
+- **Figures:** `docs/assets/multi_sensor_{voxblox,wall_slice,voxfield,fiesta}.png`.
+- **Not done / recommended:**
+  - Calibrate the back LiDAR's extrinsic (~1.4°, step 3).
+  - A multi-threaded executor with TSDF/ESDF locking, to get full-range
+    (30 m) mapping in real time (step 4).
+- **Full suite:** `Summary: 170 tests, 0 errors, 0 failures, 0 skipped`
+  (164 after the smoke-coverage fix, plus the new FIESTA/EDT integrator
+  and `Transformer` tests).

@@ -1217,6 +1217,40 @@ that fail on the old code. Numbering is kept stable.
     139 MB instead of 20-25 GB. Details:
     `docs/BUG_voxfield_server_camera_mode_memory.md`.
 
+13. **FIXED** (found in multi-sensor Phase 9 step 7, user-authorized):
+    `EsdfOccFiestaIntegrator::setLocalRange()` and
+    `EsdfOccEdtIntegrator::setLocalRange()` (`voxfield/src/integrator/
+    esdf_occ_{fiesta,edt}_integrator.cc`) had the same dense allocation as
+    #12. They allocated every ESDF block in the bounding box of all voxels
+    whose occupancy changed since the last update, plus
+    `local_range_offset_{x,y,z}`, and never freed them. On the Athena bag
+    (two 360-degree Livox LiDARs, 30 m rays pitched up to 53 degrees,
+    0.1 m voxels), the first ESDF update's box spans ~38 x 38 x 25 blocks
+    of ~0.4 MB each. `fiesta_server` and `voxedt_server` reached 16 GB RSS
+    within the first 20 s, and the run's 18 GB watchdog killed both. TSDF
+    layer memory was only ~0.77 GB. Code is identical in the ROS 1
+    original, so this is **not** a port regression.
+
+    Fix, the same as #12: the dense loop is skipped (unless the new
+    default-off `allocate_dense_local_range` config flag is set, kept only
+    for the regression test). The neighbor lookups in `updateESDF()` (FIESTA)
+    and `processRaise()`/`processLower()` (EDT) treat a neighbor in an
+    unallocated block as unobserved. This doesn't change the result. Both
+    algorithms only read or write `observed` neighbors, and a voxel only
+    becomes observed in `updateFromOccBlocks()`, which allocates its block.
+    The insert/delete-list voxels are observed occupancy voxels in blocks
+    that `OccTsdfIntegrator` just flagged as updated, so their ESDF blocks
+    are allocated too, and their `CHECK_NOTNULL`s stay.
+
+    Test: `voxfield/test/test_esdf_occ_integrators.cc` (typed over both
+    integrators) runs the real TSDF -> `OccTsdfIntegrator` -> ESDF pipeline
+    twice, dense (upstream) and sparse (fixed). It uses 4 incremental frames
+    with surface insertions, occupied-to-free deletions and 10 m jumps, and
+    requires every observed voxel's `distance`/`coc_idx`/`behind`/`self_idx`
+    to match bit-for-bit, and the ESDF block count to equal the occupancy
+    block count (upstream allocated >10x more). Real bag: see
+    `docs/MULTI_SENSOR_NOTES.md` Phase 9 step 7.
+
 ### `rcl_yaml_param_parser` gotcha found while writing the smoke test
 Multiple `--params-file` arguments for the same node merge with later
 files overriding earlier ones for a given parameter -- *except* when the
@@ -1278,11 +1312,15 @@ invocation, not just the fake-publisher subprocess.
 `scripts/clean_env.sh`). Full-workspace `colcon test`: 80 tests, 0
 errors, 0 failures, 4 skipped (the 4 non-`voxfield` methods'
 slice/save/load subtest, intentionally skipped -- mesh-only per the plan).
+*(Later corrected: skipping these was a coverage gap, not a design choice.
+They hid a `fiesta`/`voxedt` save/load bug. The subtest now runs for every
+method with 0 skips; see `docs/MULTI_SENSOR_NOTES.md` Phase 9, "Slice/save/load
+smoke coverage".)*
 
 ### Step 2: unit tests
 
 `colcon test` / `colcon test-result --verbose`: 80 tests, 0 errors, 0
-failures, 4 intentionally skipped (above). Re-confirmed in both the clean
+failures, 4 intentionally skipped (above; later un-skipped). Re-confirmed in both the clean
 env and the user's normal shell with the Hector underlay sourced (step 3
 below covers the latter).
 

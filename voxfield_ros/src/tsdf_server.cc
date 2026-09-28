@@ -575,6 +575,17 @@ void TsdfServer::insertPointcloud(
     ++sensor->num_integrated;
   }
 
+  // MULTI_SENSOR_PLAN.md M4 / Phase 9 step 4: per-sensor counters, logged
+  // (verbose only) once per callback so real-bag runs can check that every
+  // sensor keeps up and nothing is dropped after TF warm-up.
+  if (verbose_) {
+    RCLCPP_INFO(
+        node_->get_logger(),
+        "[%s] stats: received=%zu throttled=%zu dropped=%zu integrated=%zu",
+        sensor->config.name.c_str(), sensor->num_received,
+        sensor->num_throttled, sensor->num_dropped, sensor->num_integrated);
+  }
+
   if (!processed_any) {
     return;
   }

@@ -26,7 +26,15 @@
     truncation_distance: -3.0
     method: merged
     merge_with_clear: true
-    max_ray_length_m: 30.0
+    # Real-time default (Phase 9 step 4, docs/MULTI_SENSOR_NOTES.md): with
+    # 30 m rays both LiDARs' TSDF integration plus the ESDF update exceeded
+    # the single-threaded executor's budget at 1x playback (6-30 % of clouds
+    # integrated with the ESDF on). 12 m rays make the ESDF update ~1 s
+    # instead of 3-8 s, and voxfield keeps up with ~93 % of clouds. 12 m is
+    # also where the back LiDAR's ~1.4 deg extrinsic error starts doubling
+    # distant walls (step 3). For offline mapping at reduced playback speed,
+    # override to 30.0 for full range.
+    max_ray_length_m: 12.0
     min_ray_length_m: 0.3
     integrator_threads: 6
     use_const_weight: false
@@ -66,7 +74,10 @@
     # "every N frames" (a negative value), or the effective rate scales
     # with sensor count. See the plan's M12 and docs/MULTI_SENSOR_NOTES.md.
     update_mesh_every_n_sec: 1.0
-    update_esdf_every_n_sec: 1.0
+    update_esdf_every_n_sec: 2.0
+    # Buffer short ESDF stalls instead of dropping clouds at the DDS
+    # subscription (the default queue depth is 1).
+    pointcloud_queue_size: 10
     publish_map_every_n_sec: 1.0
     eval_esdf_every_n_sec: 0.0
     min_time_between_msgs_sec: 0.0
