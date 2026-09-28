@@ -932,7 +932,9 @@ above (Phase 12).
   environment has no GitHub Actions access) -- the workflow mirrors the
   exact `colcon build`/`colcon test` invocations already verified
   manually in every phase's acceptance check, so it should pass, but
-  that's unverified until it actually runs.
+  that's unverified until it actually runs. *(Later removed at the
+  user's request after the port was published: builds and tests are run
+  locally with `colcon build`/`colcon test`.)*
 - **clang-format:** ran `clang-format` (repo's own `.clang-format`:
   Google style, 80 cols, pointer-left) over exactly the 145 C++ files
   this port touched (`git diff main...HEAD --name-only --diff-filter=AMR
