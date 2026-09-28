@@ -249,8 +249,8 @@ bool Layer<VoxelType>::isCompatible(const LayerProto& layer_proto) const {
         << "\nVPS of the loaded map is: " << layer_proto.voxels_per_side()
         << " but the current map is: " << voxels_per_side_ << " check passed? "
         << (layer_proto.voxels_per_side() == voxels_per_side_)
-        << "\nLayer type of the loaded map is: " << getType()
-        << " but the current map is: " << layer_proto.type()
+        << "\nLayer type of the loaded map is: " << layer_proto.type()
+        << " but the current map is: " << getType()
         << " check passed? " << (getType().compare(layer_proto.type()) == 0)
         << "\nAre the maps using the same floating-point type? "
         << (layer_proto.voxel_size() == voxel_size_) << std::endl;

@@ -40,11 +40,11 @@ void EsdfOccEdtIntegrator::updateFromOccLayer(bool clear_updated_flag) {
 void EsdfOccEdtIntegrator::updateFromOccBlocks(
     const BlockIndexList& occ_blocks) {
   CHECK_EQ(occ_layer_->voxels_per_side(), esdf_layer_->voxels_per_side());
-  timing::Timer esdf_timer("upate_esdf/edt");
+  timing::Timer esdf_timer("update_esdf/edt");
 
   // Go through all blocks in occupancy map (that are recently updated)
   // and copy their values for relevant voxels.
-  timing::Timer allocate_timer("upate_esdf/edt/allocate_vox");
+  timing::Timer allocate_timer("update_esdf/edt/allocate_vox");
   VLOG(3) << "[ESDF update]: Propagating " << occ_blocks.size()
           << " updated blocks from the Occupancy.";
 
@@ -150,11 +150,16 @@ void EsdfOccEdtIntegrator::setLocalRange() {
   }
 
   // Allocate memory for the local ESDF map
-  BlockIndex block_range_min, block_range_max;
-  for (int i = 0; i <= 2; i++) {
-    block_range_min(i) = range_min_(i) / esdf_voxels_per_side_;
-    block_range_max(i) = range_max_(i) / esdf_voxels_per_side_;
-  }
+  // Floor division. `range_min_(i) / esdf_voxels_per_side_` mixed int64 and
+  // size_t, so a negative index was divided as unsigned; for power-of-two
+  // block sizes the narrowed result happens to equal the floor, but only by
+  // accident of two's-complement wraparound.
+  const FloatingPoint voxels_per_side_inv =
+      1.0f / static_cast<FloatingPoint>(esdf_voxels_per_side_);
+  const BlockIndex block_range_min =
+      getBlockIndexFromGlobalVoxelIndex(range_min_, voxels_per_side_inv);
+  const BlockIndex block_range_max =
+      getBlockIndexFromGlobalVoxelIndex(range_max_, voxels_per_side_inv);
 
   for (int x = block_range_min(0); x <= block_range_max(0); x++) {
     for (int y = block_range_min(1); y <= block_range_max(1); y++) {
@@ -183,7 +188,7 @@ void EsdfOccEdtIntegrator::setLocalRange() {
  * TSDF map is not involved.
  */
 void EsdfOccEdtIntegrator::updateESDF() {
-  timing::Timer init_timer("upate_esdf/edt/update_init");
+  timing::Timer init_timer("update_esdf/edt/update_init");
   // update_queue_ is a priority queue, voxels with the
   // smaller absolute distance would be updated first
 
@@ -218,7 +223,7 @@ void EsdfOccEdtIntegrator::updateESDF() {
 
   sum_occ_changed_ += update_queue_.size();
 
-  timing::Timer update_timer("upate_esdf/edt/update");
+  timing::Timer update_timer("update_esdf/edt/update");
   // Distance transform
   while (!update_queue_.empty()) {
     GlobalIndex cur_vox_idx = update_queue_.front();
@@ -229,12 +234,12 @@ void EsdfOccEdtIntegrator::updateESDF() {
     if (!cur_vox->in_queue)
       continue;
     if (cur_vox->raise >= 0) {
-      // timing::Timer raise_timer("upate_esdf/edt/raise");
+      // timing::Timer raise_timer("update_esdf/edt/raise");
       processRaise(cur_vox);
       // raise_timer.Stop();
       sum_raise_++;
     } else {
-      // timing::Timer lower_timer("upate_esdf/edt/lower");
+      // timing::Timer lower_timer("update_esdf/edt/lower");
       processLower(cur_vox);
       // lower_timer.Stop();
       sum_lower_++;

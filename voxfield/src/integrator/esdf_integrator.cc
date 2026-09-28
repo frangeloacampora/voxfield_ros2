@@ -23,11 +23,11 @@ EsdfIntegrator::EsdfIntegrator(
 // Used for planning - allocates sphere around as observed but occupied,
 // and clears space in a sphere around current position.
 void EsdfIntegrator::addNewRobotPosition(const Point& position) {
-  timing::Timer clear_timer("upate_esdf/voxfield/clear_radius");
+  timing::Timer clear_timer("update_esdf/voxblox/clear_radius");
 
   // First set all in inner sphere to free.
   HierarchicalIndexMap block_voxel_list;
-  timing::Timer sphere_timer("upate_esdf/voxfield/clear_radius/get_sphere");
+  timing::Timer sphere_timer("update_esdf/voxblox/clear_radius/get_sphere");
   utils::getAndAllocateSphereAroundPoint(
       position, config_.clear_sphere_radius, esdf_layer_, &block_voxel_list);
   sphere_timer.Stop();
@@ -59,7 +59,7 @@ void EsdfIntegrator::addNewRobotPosition(const Point& position) {
   // Second set all remaining unknown to occupied.
   HierarchicalIndexMap block_voxel_list_occ;
   timing::Timer outer_sphere_timer(
-      "upate_esdf/voxfield/clear_radius/get_outer_sphere");  // NOLINT
+      "update_esdf/voxblox/clear_radius/get_outer_sphere");  // NOLINT
   utils::getAndAllocateSphereAroundPoint(
       position, config_.occupied_sphere_radius, esdf_layer_,
       &block_voxel_list_occ);
@@ -127,13 +127,13 @@ void EsdfIntegrator::updateFromTsdfLayer(bool clear_updated_flag) {
 void EsdfIntegrator::updateFromTsdfBlocks(
     const BlockIndexList& tsdf_blocks, bool incremental) {
   CHECK_EQ(tsdf_layer_->voxels_per_side(), esdf_layer_->voxels_per_side());
-  timing::Timer esdf_timer("upate_esdf/voxfield");
+  timing::Timer esdf_timer("update_esdf/voxblox");
 
   // Go through all blocks in TSDF and copy their values for relevant voxels.
   size_t num_lower = 0u;
   size_t num_raise = 0u;
   size_t num_new = 0u;
-  timing::Timer propagate_timer("upate_esdf/voxfield/propagate_tsdf");
+  timing::Timer propagate_timer("update_esdf/voxblox/propagate_tsdf");
   VLOG(3) << "[ESDF update]: Propagating " << tsdf_blocks.size()
           << " updated blocks from the TSDF.";
   for (const BlockIndex& block_index : tsdf_blocks) {
@@ -297,11 +297,11 @@ void EsdfIntegrator::updateFromTsdfBlocks(
   VLOG(3) << "[ESDF update]: Lower: " << num_lower << " Raise: " << num_raise
           << " New: " << num_new;
 
-  timing::Timer raise_timer("upate_esdf/voxfield/raise");
+  timing::Timer raise_timer("update_esdf/voxblox/raise");
   processRaiseSet();
   raise_timer.Stop();
 
-  timing::Timer update_timer("upate_esdf/voxfield/update");
+  timing::Timer update_timer("update_esdf/voxblox/update");
   processOpenSet();
   update_timer.Stop();
 

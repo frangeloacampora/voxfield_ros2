@@ -151,11 +151,16 @@ void EsdfOccFiestaIntegrator::setLocalRange() {
   }
 
   // Allocate memory for the local ESDF map
-  BlockIndex block_range_min, block_range_max;
-  for (int i = 0; i <= 2; i++) {
-    block_range_min(i) = range_min_(i) / esdf_voxels_per_side_;
-    block_range_max(i) = range_max_(i) / esdf_voxels_per_side_;
-  }
+  // Floor division. `range_min_(i) / esdf_voxels_per_side_` mixed int64 and
+  // size_t, so a negative index was divided as unsigned; for power-of-two
+  // block sizes the narrowed result happens to equal the floor, but only by
+  // accident of two's-complement wraparound.
+  const FloatingPoint voxels_per_side_inv =
+      1.0f / static_cast<FloatingPoint>(esdf_voxels_per_side_);
+  const BlockIndex block_range_min =
+      getBlockIndexFromGlobalVoxelIndex(range_min_, voxels_per_side_inv);
+  const BlockIndex block_range_max =
+      getBlockIndexFromGlobalVoxelIndex(range_max_, voxels_per_side_inv);
 
   for (int x = block_range_min(0); x <= block_range_max(0); x++) {
     for (int y = block_range_min(1); y <= block_range_max(1); y++) {

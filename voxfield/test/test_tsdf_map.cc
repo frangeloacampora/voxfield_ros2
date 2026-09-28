@@ -24,11 +24,15 @@ class TsdfMapTest : public ::testing::Test {
 TEST_F(TsdfMapTest, BlockAllocation) {
   // Should have no blocks by default.
   EXPECT_EQ(0, map_->getTsdfLayer().getNumberOfAllocatedBlocks());
-  map_->getTsdfLayerPtr()->allocateNewBlockByCoordinates(Point(0.0, 0.15, 0.0));
+  // Allocating an existing block must be idempotent. That is the contract of
+  // allocateBlockPtrByCoordinates(); allocateNewBlockByCoordinates() DCHECKs
+  // that the block is new, so this test used to abort in Debug builds and
+  // only passed because DCHECK compiles out in Release.
+  map_->getTsdfLayerPtr()->allocateBlockPtrByCoordinates(Point(0.0, 0.15, 0.0));
   EXPECT_EQ(1, map_->getTsdfLayerPtr()->getNumberOfAllocatedBlocks());
-  map_->getTsdfLayerPtr()->allocateNewBlockByCoordinates(Point(0.0, 0.13, 0.0));
+  map_->getTsdfLayerPtr()->allocateBlockPtrByCoordinates(Point(0.0, 0.13, 0.0));
   EXPECT_EQ(1, map_->getTsdfLayerPtr()->getNumberOfAllocatedBlocks());
-  map_->getTsdfLayerPtr()->allocateNewBlockByCoordinates(
+  map_->getTsdfLayerPtr()->allocateBlockPtrByCoordinates(
       Point(-10.0, 13.5, 20.0));
   EXPECT_EQ(2, map_->getTsdfLayerPtr()->getNumberOfAllocatedBlocks());
 }

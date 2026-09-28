@@ -200,11 +200,16 @@ void EsdfVoxfieldIntegrator::setLocalRange() {
   }
 
   // Allocate memory for the local ESDF map
-  BlockIndex block_range_min, block_range_max;
-  for (int i = 0; i <= 2; i++) {
-    block_range_min(i) = range_min_(i) / esdf_voxels_per_side_;
-    block_range_max(i) = range_max_(i) / esdf_voxels_per_side_;
-  }
+  // Floor division. `range_min_(i) / esdf_voxels_per_side_` mixed int64 and
+  // size_t, so a negative index was divided as unsigned; for power-of-two
+  // block sizes the narrowed result happens to equal the floor, but only by
+  // accident of two's-complement wraparound.
+  const FloatingPoint voxels_per_side_inv =
+      1.0f / static_cast<FloatingPoint>(esdf_voxels_per_side_);
+  const BlockIndex block_range_min =
+      getBlockIndexFromGlobalVoxelIndex(range_min_, voxels_per_side_inv);
+  const BlockIndex block_range_max =
+      getBlockIndexFromGlobalVoxelIndex(range_max_, voxels_per_side_inv);
 
   // LOG(INFO) << "block_range_min: " << block_range_min;
   // LOG(INFO) << "block_range_max: " << block_range_max;
@@ -478,7 +483,7 @@ void EsdfVoxfieldIntegrator::updateESDF() {
     // Patch Code (optional)
     if (config_.patch_on && cur_vox->newly) {
       // only newly added voxels are required for checking
-      // timing::Timer patch_timer("upate_esdf/patch(alg3)");
+      // timing::Timer patch_timer("update_esdf/patch(alg3)");
       cur_vox->newly = false;
       // indicate if the patch works
       bool change_flag = false;

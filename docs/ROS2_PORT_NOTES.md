@@ -51,7 +51,12 @@ the ROS 1 tree.
   upstream method): `esdf_integrator.cc` timing label keys
   (`upate_esdf/voxblox/...` → `.../voxfield/...`, typo `upate` left as-is —
   behavior/string-key preservation isn't required for internal profiling
-  labels, but the rename should still be consistent), `conversions.h`
+  labels, but the rename should still be consistent). *(Later corrected,
+  multi-sensor Phase 10: that rename mislabeled the **voxblox** ESDF
+  integrator's timings as `.../voxfield/...`, which reads like the Voxfield
+  integrator's own `update_esdf/voxfield`. They are now
+  `update_esdf/voxblox/...`, and the `upate` typo is fixed everywhere,
+  including EDT's `update_esdf/edt/...`.)* `conversions.h`
   "convert... to a voxblox pointcloud" comments, one comment in
   `voxfield_mesh_visual.cc`, `MultiMesh.msg`'s doc comment, and the
   transient round-trip test fixture names in `test_clear_spheres.cc`,
@@ -185,7 +190,13 @@ when built without `CMAKE_BUILD_TYPE=Release`, and both this test and the
 three below run and pass once it's set. Not fixed here per the plan's
 behavior-preservation rule; a real fix (make
 `allocateNewBlockByCoordinates()` check-then-allocate) is a candidate for
-a follow-up, non-port PR.
+a follow-up, non-port PR. *(Later fixed, multi-sensor Phase 10: the
+`DCHECK` is a correct precondition ("new" block), and only tests call
+`allocateNewBlockByCoordinates()`. The bug was `BlockAllocation` checking
+idempotency with the "new" API, so it now uses the idempotent
+`allocateBlockPtrByCoordinates()`. A Debug build of `voxfield` then passes
+`test_tsdf_map` and the other Layer-level tests; see
+`docs/MULTI_SENSOR_NOTES.md` Phase 10.)*
 
 **Also explained by the same unset-build-type issue:** `test_merge_integration`,
 `test_sdf_integrators`, and `test_clear_spheres` integrate sizeable
@@ -1183,10 +1194,11 @@ that fail on the old code. Numbering is kept stable.
     contains only the ESDF layer, so `~/load_map` still rejects it,
     correctly. It can still be read as a plain ESDF layer.
 
-    Not fixed (cosmetic): `Layer::isCompatible()`'s warning prints the two
-    layer types swapped ("loaded map is: esdf but the current map is:
-    tsdf"). It is logged, as expected, when the multi-layer loader skips
-    the other layer in a combined file.
+    Also fixed (cosmetic, multi-sensor Phase 10): `Layer::isCompatible()`'s
+    warning printed the two layer types swapped. It is logged, as
+    expected, when the multi-layer loader skips the other layer in a
+    combined file, and now reads "loaded map is: tsdf but the current map
+    is: esdf" for an ESDF layer skipping the TSDF one.
 12. **FIXED as a deliberate deviation from the "document, don't fix"
     rule** (the user authorized it because of how severe it is):
     `EsdfVoxfieldIntegrator::setLocalRange()` (`voxfield/src/integrator/

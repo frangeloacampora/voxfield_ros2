@@ -225,11 +225,15 @@ Nothing else changed. No parameters, no public API, no server code.
   servers ran concurrently, some at 0.05 m voxels. If they come back, the
   first step is to measure per-process RSS of the real binaries under a
   cgroup cap.
-- `setLocalRange()`'s legacy loop, still used only when
-  `allocate_tsdf_in_range` is set, converts voxel indices to block indices
-  with C++ integer division, which truncates toward zero instead of
-  flooring. For negative coordinates, one block row can be missed at the
-  low edge. Upstream behavior, off by default, left as-is.
+- ~~`setLocalRange()`'s legacy loop truncates toward zero for negative
+  coordinates.~~ *(Corrected in multi-sensor Phase 10: this never
+  happened. `range_min_(i) / esdf_voxels_per_side_` divides an `int64` by
+  a `size_t`, so the division is unsigned. For power-of-two block sizes,
+  the wrapped result narrowed to `int` equals the floor exactly: checked
+  for -1, -5, -16, -17, -20, -33 and -1000 with 16 voxels per side. That
+  was by accident, so the Voxfield, FIESTA and EDT loops now floor
+  explicitly with `getBlockIndexFromGlobalVoxelIndex()`. The behavior is
+  identical.)*
 
 ## Diagnostic methodology pitfall (so you don't repeat it)
 
