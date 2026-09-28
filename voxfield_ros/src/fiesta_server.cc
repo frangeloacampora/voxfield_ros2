@@ -272,17 +272,32 @@ bool FiestaServer::saveAllMap(const std::string& file_path) {
          saveOccMap(file_path_occ);
 }
 
+bool FiestaServer::saveMap(const std::string& file_path) {
+  // Output TSDF map first (this truncates/creates the file), then append
+  // the ESDF layer, so loadMap() can read them back in the same order.
+  // Same fix as VoxbloxServer::saveMap() (docs/ROS2_PORT_NOTES.md "Known
+  // upstream issues" #11): without this override ~/save_map fell through
+  // to TsdfServer::saveMap() and wrote a TSDF-only file, which loadMap()
+  // then rejected when it looked for the ESDF layer.
+  const bool success = TsdfServer::saveMap(file_path);
+  constexpr bool kClearFile = false;
+  return success &&
+         io::SaveLayer(esdf_map_->getEsdfLayer(), file_path, kClearFile);
+}
+
 bool FiestaServer::saveTsdfMap(const std::string& file_path) {
   return TsdfServer::saveMap(file_path);
 }
 
 bool FiestaServer::saveEsdfMap(const std::string& file_path) {
-  constexpr bool kClearFile = false;
+  // ESDF layer only, in a fresh file (single-layer readers such as
+  // voxblox_eval's io::LoadLayer<EsdfVoxel>() expect it first in the file).
+  constexpr bool kClearFile = true;
   return io::SaveLayer(esdf_map_->getEsdfLayer(), file_path, kClearFile);
 }
 
 bool FiestaServer::saveOccMap(const std::string& file_path) {
-  constexpr bool kClearFile = false;
+  constexpr bool kClearFile = true;
   return io::SaveLayer(
       occupancy_map_->getOccupancyLayer(), file_path, kClearFile);
 }

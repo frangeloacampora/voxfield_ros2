@@ -1,7 +1,9 @@
 // Regression tests for the ~/save_map / ~/load_map / ~/save_esdf_map file
-// handling of VoxfieldServer and VoxbloxServer (docs/ROS2_PORT_NOTES.md
-// "Known upstream issues" #11). Upstream saveMap() had its TSDF save
-// commented out, so a saved map could never be loaded back.
+// handling of VoxfieldServer, VoxbloxServer, FiestaServer and VoxedtServer
+// (docs/ROS2_PORT_NOTES.md "Known upstream issues" #11). Upstream saveMap()
+// had its TSDF save commented out (voxfield, voxblox) or wasn't overridden
+// at all (fiesta, voxedt: TSDF only), so a saved map could never be loaded
+// back.
 #include <gtest/gtest.h>
 
 #include <cstdio>
@@ -12,13 +14,22 @@
 #include <rclcpp/rclcpp.hpp>
 #include <voxfield/io/layer_io.h>
 
-// voxblox_server.h and voxfield_server.h can't be included together
-// (tsdf_server.h and np_tsdf_server.h both define kDefaultMaxIntensity), so
-// CMake builds this file once per server with TEST_VOXBLOX_SERVER on/off.
-#ifdef TEST_VOXBLOX_SERVER
+// The servers' headers can't all be included together (tsdf_server.h and
+// np_tsdf_server.h both define kDefaultMaxIntensity), so CMake builds this
+// file once per server, selecting it with TEST_{VOXBLOX,FIESTA,VOXEDT}_SERVER
+// (none set: VoxfieldServer).
+#if defined(TEST_VOXBLOX_SERVER)
 #include "voxfield_ros/voxblox_server.h"
 #define TEST_SERVER VoxbloxServer
 #define TEST_SERVER_NAME "voxblox"
+#elif defined(TEST_FIESTA_SERVER)
+#include "voxfield_ros/fiesta_server.h"
+#define TEST_SERVER FiestaServer
+#define TEST_SERVER_NAME "fiesta"
+#elif defined(TEST_VOXEDT_SERVER)
+#include "voxfield_ros/voxedt_server.h"
+#define TEST_SERVER VoxedtServer
+#define TEST_SERVER_NAME "voxedt"
 #else
 #include "voxfield_ros/voxfield_server.h"
 #define TEST_SERVER VoxfieldServer

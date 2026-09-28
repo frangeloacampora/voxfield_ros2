@@ -92,9 +92,9 @@ Topic/service names below are relative to the node (`~` = node-private); this re
 |---|---|---|---|
 | `~/generate_mesh` | `std_srvs/srv/Empty` | all | Force a full mesh regeneration. If the `mesh_filename` param is set, also writes an ASCII PLY to that path. |
 | `~/clear_map` | `std_srvs/srv/Empty` | all | Clear the whole map. |
-| `~/save_map` / `~/load_map` | `voxfield_msgs/srv/FilePath` | all | Save/load the TSDF layer as a binary file. `voxfield_server` and `voxblox_server` also save/load their ESDF layer in the same file (TSDF first, then ESDF). |
-| `~/save_esdf_map` | `voxfield_msgs/srv/FilePath` | `voxfield_server`, `voxblox_server` | Save just the ESDF layer, replacing the file (the format `voxblox_eval`'s `voxblox_esdf_file_path` expects). |
-| `~/save_occ_map` / `~/save_all_map` | `voxfield_msgs/srv/FilePath` | `fiesta_server`, `voxedt_server` | Save the occupancy layer / everything. |
+| `~/save_map` / `~/load_map` | `voxfield_msgs/srv/FilePath` | all | Save/load the TSDF layer as a binary file. `voxfield_server`, `voxblox_server`, `fiesta_server` and `voxedt_server` also save/load their ESDF layer in the same file (TSDF first, then ESDF). |
+| `~/save_esdf_map` | `voxfield_msgs/srv/FilePath` | `voxfield_server`, `voxblox_server`, `fiesta_server`, `voxedt_server` | Save just the ESDF layer, replacing the file (the format `voxblox_eval`'s `voxblox_esdf_file_path` expects). |
+| `~/save_occ_map` / `~/save_all_map` | `voxfield_msgs/srv/FilePath` | `fiesta_server`, `voxedt_server` | Save the occupancy layer (replacing the file) / everything (`<path>.tsdf`, `<path>.esdf`, `<path>.occ`). |
 | `~/publish_pointclouds` | `std_srvs/srv/Empty` | all | Force-publish every pointcloud output once, bypassing the `publish_pointclouds`/`publish_slices` param gating. |
 | `~/publish_map` | `std_srvs/srv/Empty` | all | Force-publish `~/tsdf_map_out`/`~/esdf_map_out` once. |
 

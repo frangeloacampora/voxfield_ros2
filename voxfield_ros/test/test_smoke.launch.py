@@ -13,16 +13,19 @@ comment where it's set -- rcl_yaml_param_parser silently drops a later
 --params-file's override when its YAML-inferred type differs from an
 earlier file's for the same key).
 
-For `method=voxfield` this checks the full set the plan calls for:
-`~/mesh` receiving a message with at least one non-empty mesh block,
-`~/tsdf_slice`/`~/esdf_slice` receiving a non-empty cloud, and a
-`~/save_map` -> `~/load_map` round trip through a temp file, asserting the
-load actually succeeds (the server logs "Successfully loaded TSDF layer."
-and no "Failed to load map" error). This round trip failed before the
-`VoxfieldServer::saveMap()` fix (docs/ROS2_PORT_NOTES.md "Known upstream
-issues" #11). Every other method
-(`np_tsdf`, `voxblox`, `fiesta`, `voxedt`) only checks `~/mesh`, per the
-plan's "repeat quickly ... (mesh only)".
+Every method is checked for `~/mesh` receiving a message with at least
+one non-empty mesh block, `~/tsdf_slice` (and, for the ESDF servers,
+`~/esdf_slice`) receiving a non-empty cloud, and a `~/save_map` ->
+`~/load_map` round trip through a temp file, asserting the load actually
+succeeds (the server logs "Successfully loaded TSDF layer." and no "Failed
+to load map" error). For the ESDF servers (`voxfield`, `voxblox`,
+`fiesta`, `voxedt`) the saved file holds the TSDF and the ESDF layer, and
+the load reads both back; `np_tsdf` has no ESDF, so its file is TSDF only.
+This round trip failed for voxfield/voxblox before their `saveMap()` fix
+(docs/ROS2_PORT_NOTES.md "Known upstream issues" #11) and for
+fiesta/voxedt until they got the same override (MULTI_SENSOR_NOTES.md
+Phase 9, "Slice/save/load smoke coverage"): they used to write a TSDF-only
+file that their own `loadMap()` then rejected.
 
 `method` is read from sys.argv (`method:=<name>`, default `voxfield`);
 `voxfield_ros/CMakeLists.txt` registers this file once per method via
@@ -57,6 +60,10 @@ def _method_from_argv(default="voxfield"):
 
 METHOD = _method_from_argv()
 NODE_NAME = "voxfield_node"
+# Servers that keep an ESDF layer: they publish ~/esdf_slice, and their
+# save_map/load_map files carry the ESDF layer after the TSDF one.
+ESDF_METHODS = {"voxfield", "voxblox", "fiesta", "voxedt"}
+HAS_ESDF = METHOD in ESDF_METHODS
 
 # Absolute paths only: /opt/ros/jazzy's python3 C extensions don't load
 # under a non-system python3 (e.g. a miniconda install earlier on PATH --
@@ -94,6 +101,12 @@ def generate_test_description():
             # writing this test, not documented anywhere obvious. A
             # same-typed override merges fine.
             {"use_sim_time": False, "update_esdf_every_n_sec": 1},
+            # The ESDF servers publish ~/tsdf_slice from their ESDF update
+            # timer. np_tsdf has no ESDF: NpTsdfServer only publishes slices
+            # from publishPointclouds(), which kitti_param.yaml's
+            # `publish_pointclouds: false` turns off, so turn it on here
+            # (bool over bool, so the override merges; see above).
+            {} if HAS_ESDF else {"publish_pointclouds": True},
         ],
     )
 
@@ -155,34 +168,36 @@ class TestSmoke(unittest.TestCase):
         )
 
     def test_slice_and_map_roundtrip(self, proc_output, server):
-        if METHOD != "voxfield":
-            self.skipTest("full mesh/slice/save/load check only runs for voxfield")
-
         def nonempty_cloud(msg):
             return len(msg.data) > 0
 
         tsdf_slice = self._wait_for(
             PointCloud2, f"/{NODE_NAME}/tsdf_slice", nonempty_cloud, timeout_sec=15.0
         )
-        esdf_slice = self._wait_for(
-            PointCloud2, f"/{NODE_NAME}/esdf_slice", nonempty_cloud, timeout_sec=15.0
-        )
-        self.assertTrue(
-            tsdf_slice is not None or esdf_slice is not None,
-            f"[{METHOD}] neither /{NODE_NAME}/tsdf_slice nor "
-            f"/{NODE_NAME}/esdf_slice produced a non-empty cloud within 30s",
-        )
-        # VoxfieldServer::saveMap()/loadMap() are multi-layer: they save (and
-        # expect to load) both the TSDF and ESDF layers from one file, so
-        # the round trip below needs the ESDF layer to actually have data
-        # -- not just the TSDF one -- or loadMap() correctly, and loudly,
-        # rejects the file. Block on esdf_slice specifically before saving.
         self.assertIsNotNone(
-            esdf_slice,
-            f"[{METHOD}] /{NODE_NAME}/esdf_slice never produced a non-empty "
-            "cloud within 30s (needed before save_map/load_map, which are "
-            "multi-layer for voxfield)",
+            tsdf_slice,
+            f"[{METHOD}] /{NODE_NAME}/tsdf_slice never produced a non-empty "
+            "cloud within 15s",
         )
+        if HAS_ESDF:
+            # The ESDF servers' saveMap()/loadMap() are multi-layer: they
+            # save (and expect to load) both the TSDF and ESDF layers from
+            # one file, so the round trip below needs the ESDF layer to
+            # actually have data -- not just the TSDF one -- or loadMap()
+            # correctly, and loudly, rejects the file. Block on esdf_slice
+            # before saving.
+            esdf_slice = self._wait_for(
+                PointCloud2,
+                f"/{NODE_NAME}/esdf_slice",
+                nonempty_cloud,
+                timeout_sec=15.0,
+            )
+            self.assertIsNotNone(
+                esdf_slice,
+                f"[{METHOD}] /{NODE_NAME}/esdf_slice never produced a "
+                "non-empty cloud within 15s (needed before save_map/load_map, "
+                "which are multi-layer for this server)",
+            )
 
         fd, map_path = tempfile.mkstemp(suffix=".tsdf", prefix="voxfield_smoke_")
         os.close(fd)
@@ -214,13 +229,14 @@ class TestSmoke(unittest.TestCase):
             rclpy.spin_until_future_complete(self.node, future, timeout_sec=15.0)
             self.assertTrue(future.done(), "load_map call did not complete")
             # FilePath.srv has no success field (D13), so check the outcome
-            # in the server's log. NpTsdfServer::loadMap() logs
+            # in the server's log. {Np,}TsdfServer::loadMap() logs
             # "Successfully loaded TSDF layer." once the TSDF half is read,
             # and loadMapCallback() logs "Failed to load map from '...'"
             # if either half (TSDF or ESDF) fails. Before the fix for
             # docs/ROS2_PORT_NOTES.md "Known upstream issues" #11,
-            # saveMap() wrote only the ESDF layer, so this load always
-            # failed on the TSDF half.
+            # voxfield/voxblox's saveMap() wrote only the ESDF layer (this
+            # load failed on the TSDF half), and fiesta/voxedt's wrote only
+            # the TSDF layer (it failed on the ESDF half).
             proc_output.assertWaitFor(
                 "Successfully loaded TSDF layer.", process=server, timeout=10
             )

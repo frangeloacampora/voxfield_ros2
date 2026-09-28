@@ -38,6 +38,7 @@ class FiestaServer : public TsdfServer {
   virtual void publishPointclouds();
   virtual void newPoseCallback(const Transformation& T_G_C);
   virtual void publishMap(bool reset_remote_map = false);
+  virtual bool saveMap(const std::string& file_path);
   virtual bool saveTsdfMap(const std::string& file_path);
   virtual bool saveEsdfMap(const std::string& file_path);
   virtual bool saveOccMap(const std::string& file_path);

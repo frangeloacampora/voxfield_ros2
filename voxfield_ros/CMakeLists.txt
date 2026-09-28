@@ -199,7 +199,7 @@ if(BUILD_TESTING)
 
   # save_map/load_map/save_esdf_map file handling ("Known upstream issues"
   # #11).
-  foreach(_map_io_server IN ITEMS voxfield voxblox)
+  foreach(_map_io_server IN ITEMS voxfield voxblox fiesta voxedt)
     ament_add_gtest(test_${_map_io_server}_server_map_io
       test/test_server_map_io.cc
       SKIP_LINKING_MAIN_LIBRARIES)
@@ -208,6 +208,10 @@ if(BUILD_TESTING)
   endforeach()
   target_compile_definitions(test_voxblox_server_map_io PRIVATE
     TEST_VOXBLOX_SERVER)
+  target_compile_definitions(test_fiesta_server_map_io PRIVATE
+    TEST_FIESTA_SERVER)
+  target_compile_definitions(test_voxedt_server_map_io PRIVATE
+    TEST_VOXEDT_SERVER)
 
   # Golden regression tests pinning today's (legacy, single-sensor) TSDF
   # integration output, added before the multi-sensor refactor begins
@@ -228,8 +232,8 @@ if(BUILD_TESTING)
 
   # Dataset-free smoke test (plan §6 Phase 12 step 1): one launch_test per
   # server executable, sharing test/test_smoke.launch.py via the `method`
-  # launch argument. voxfield gets the full mesh/slice/save+load check;
-  # the rest get mesh-only (see the launch file's own docstring).
+  # launch argument. Every method gets the full mesh/slice/save+load check
+  # (see the launch file's own docstring).
   find_package(launch_testing_ament_cmake REQUIRED)
   foreach(_smoke_method IN ITEMS voxfield np_tsdf voxblox fiesta voxedt)
     add_launch_test(test/test_smoke.launch.py
