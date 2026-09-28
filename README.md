@@ -248,69 +248,7 @@ Topic/service names below are relative to the node (`~` = node-private); this re
 
 `~/generate_mesh` (with `mesh_filename` set) instead writes an **ASCII PLY** (`element vertex`/`element face`, `x y z normal_x normal_y normal_z red green blue alpha` per vertex) — a normal, tool-readable mesh file, unlike the protobuf map files above.
 
-## Example Usage
-
-The datasets below were recorded as ROS 1 bags. Convert one to a ROS 2 bag first with [`rosbags`](https://gitlab.com/ternaris/rosbags) (`pip install --user rosbags`):
-
-```
-rosbags-convert --src <dataset>.bag --dst <dataset>_ros2
-```
-
-### Run on the Cow & Lady real-world RGB-D dataset
-
-1. Download the dataset [here](https://projects.asl.ethz.ch/datasets/doku.php?id=iros2017) or use the following command in a target folder:
-
-```
-wget http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/data.bag
-wget http://robotics.ethz.ch/~asl-datasets/iros_2017_voxblox/voxblox_cow_extras.zip
-```
-
-2. Convert the bag as above, then run Voxfield mapping on the Cow & Lady dataset:
-
-```
-ros2 launch voxfield_ros cow_voxfield.launch.py bag_file:=<path/to/data_ros2>
-```
-
-### Run on the KITTI real-world LiDAR or stereo dataset
-
-1. Download the full dataset [here](http://www.cvlibs.net/datasets/kitti/eval_odometry.php) or a rosbag of sequence07 [here](https://drive.google.com/file/d/1_qUfwUw88rEKitUpt1kjswv7Cv4GPs0b/view).
-   Then use the [kitti_to_rosbag](https://github.com/ethz-asl/kitti_to_rosbag) package to convert the full dataset to rosbags.
-2. Convert the bag as above, then run Voxfield mapping on the KITTI dataset:
-
-```
-ros2 launch voxfield_ros kitti_voxfield.launch.py bag_file:=<path/to/kitti_ros2>
-```
-
-### Run on the MaiCity synthetic LiDAR dataset
-
-1. Download the dataset [here](https://www.ipb.uni-bonn.de/data/mai-city-dataset/) or use the following command in a target folder:
-
-```
-wget https://www.ipb.uni-bonn.de/html/projects/mai_city/mai_city.tar.gz
-tar -xvf mai_city.tar.gz
-```
-
-2. Convert the bag as above, then run Voxfield mapping on the MaiCity dataset:
-
-```
-ros2 launch voxfield_ros mai_voxfield.launch.py bag_file:=<path/to/mai_city_ros2>
-```
-
-### Run on your own data
-
-Use the generic launch file directly, picking whichever dataset preset (`cow`/`kitti`/`mai`/`basement`/`vicon`) is closest to your sensor setup for its default topics/robot model/RViz config, then override what differs:
-
-```
-ros2 launch voxfield_ros mapping.launch.py \
-    method:=voxfield dataset:=kitti \
-    bag_file:=<path/to/your_bag_ros2> \
-    pointcloud_topic:=<your/pointcloud/topic> \
-    transform_topic:=<your/transform/topic>   # only if you're not using TF
-```
-
-`ros2 launch voxfield_ros mapping.launch.py --show-args` lists every override (`speed`, `rviz`, `rviz_config`, `robot_model_file`, `use_sim_time`, ...).
-
-### Multiple sensors (one map)
+## Multiple sensors (one map)
 
 Every server can fuse several depth sensors (e.g. two LiDARs, or LiDARs plus RGB-D cameras) into **one** TSDF, ESDF and mesh. Each sensor gets its own subscription, pose lookup, throttle and integrator settings. For the projective `np_tsdf`/`voxfield` servers, each sensor also gets its own range-image model. All of them write into the same map.
 
@@ -376,11 +314,13 @@ ros2 launch voxfield_ros multi_sensor_mapping.launch.py method:=voxfield \
 
 `docs/MULTI_SENSOR_NOTES.md` (Phase 9) has the measurements, tuning decisions and known issues from validating this on a real robot bag.
 
+## Further topics
+
 ### Customizing, comparison and evaluation
 
 To change the mapping and visualization parameters such as voxel size and truncation distance, please configure the `.yaml` files under `./voxfield_ros/cfg/param/` folder (ROS 2 parameter-file format — see `scripts/convert_ros1_params.py` if you're porting parameters from a ROS 1 Voxblox/Voxfield setup).
 
-For the comparison with other state-of-the-art methods (Voxblox, FIESTA, EDT), set `bag_file` on the corresponding launch file `[dataset]_[method].launch.py` and launch it.
+To compare with the other methods (Voxblox, FIESTA, EDT), run the same bag and configuration with a different `method:=` (see [Choosing a server](#choosing-a-server)).
 
 To evaluate the TSDF, mesh and ESDF mapping quality, one first need to use the ros service to save the corresponding map. You can configure the data path and evaluation setup [here](https://github.com/VIS4ROB-lab/voxfield-panmap/blob/master/panoptic_mapping_utils/config/evaluate_config.yaml) and conduct the evaluation by launching [here](https://github.com/VIS4ROB-lab/voxfield-panmap/blob/master/panoptic_mapping_utils/launch/evaluate_panmap.launch). You may also check the evaluation metrics [here](https://github.com/VIS4ROB-lab/voxfield-panmap/blob/master/panoptic_mapping_utils/src/evaluation/map_evaluator.cpp).
 
