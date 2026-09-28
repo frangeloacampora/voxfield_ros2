@@ -159,26 +159,33 @@ void RayCaster::setupRayCaster(
   Ray distance_to_boundaries(
       corrected_step.cast<FloatingPoint>() - start_scaled_shifted);
 
-  t_to_next_boundary_ =
-      Ray((std::abs(ray_scaled.x()) < 0.0)
-              ? 2.0
-              : distance_to_boundaries.x() / ray_scaled.x(),
-          (std::abs(ray_scaled.y()) < 0.0)
-              ? 2.0
-              : distance_to_boundaries.y() / ray_scaled.y(),
-          (std::abs(ray_scaled.z()) < 0.0)
-              ? 2.0
-              : distance_to_boundaries.z() / ray_scaled.z());
+  // An axis the ray doesn't move along (zero component, zero step sign) gets
+  // t = 2.0, beyond the ray's [0, 1] range, so nextRayIndex() never picks
+  // it. Upstream (also the ROS 1 original and voxblox) tested
+  // `std::abs(c) < 0.0`, which is never true: a zero component then divided
+  // by zero (-inf or NaN), nextRayIndex() kept picking that axis with its
+  // zero step, and the ray never left its first voxel. Any point lying
+  // exactly on a coordinate axis or plane through the sensor was integrated
+  // at the sensor instead of along its ray (docs/MULTI_SENSOR_NOTES.md
+  // Phase 7 / Phase 10, test/test_ray_caster.cc).
+  constexpr FloatingPoint kUnusedAxisT = 2.0;
+  t_to_next_boundary_ = Ray(
+      (ray_scaled.x() == 0.0f) ? kUnusedAxisT
+                               : distance_to_boundaries.x() / ray_scaled.x(),
+      (ray_scaled.y() == 0.0f) ? kUnusedAxisT
+                               : distance_to_boundaries.y() / ray_scaled.y(),
+      (ray_scaled.z() == 0.0f) ? kUnusedAxisT
+                               : distance_to_boundaries.z() / ray_scaled.z());
 
   // Distance to cross one grid cell along the ray in t.
   // Same as absolute inverse value of delta_coord.
   t_step_size_ = Ray(
-      (std::abs(ray_scaled.x()) < 0.0) ? 2.0
-                                       : ray_step_signs_.x() / ray_scaled.x(),
-      (std::abs(ray_scaled.y()) < 0.0) ? 2.0
-                                       : ray_step_signs_.y() / ray_scaled.y(),
-      (std::abs(ray_scaled.z()) < 0.0) ? 2.0
-                                       : ray_step_signs_.z() / ray_scaled.z());
+      (ray_scaled.x() == 0.0f) ? kUnusedAxisT
+                               : ray_step_signs_.x() / ray_scaled.x(),
+      (ray_scaled.y() == 0.0f) ? kUnusedAxisT
+                               : ray_step_signs_.y() / ray_scaled.y(),
+      (ray_scaled.z() == 0.0f) ? kUnusedAxisT
+                               : ray_step_signs_.z() / ray_scaled.z());
 }
 
 }  // namespace voxfield

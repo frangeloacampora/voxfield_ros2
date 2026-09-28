@@ -1251,6 +1251,52 @@ that fail on the old code. Numbering is kept stable.
     block count (upstream allocated >10x more). Real bag: see
     `docs/MULTI_SENSOR_NOTES.md` Phase 9 step 7.
 
+14. **FIXED** (fixed in multi-sensor Phase 10, user-authorized):
+    `RayCaster::setupRayCaster()` (`voxfield/src/integrator/
+    integrator_utils.cc`) guarded each axis with
+    `std::abs(ray_scaled.x()) < 0.0 ? 2.0 : ...`. An absolute value is never
+    negative, so the guard never fired. For a ray with an exactly-zero
+    direction component, the time to the next boundary on that axis became
+    `distance / 0` and its step `0 / 0 = NaN`:
+    - If the ray started inside a voxel, that axis's time was `-inf`, so
+      `nextRayIndex()` chose it once, "stepping" with sign 0 (the same voxel
+      again). After that the time was `NaN`, and `minCoeff()` stopped
+      choosing it. The step count is fixed, so each zero axis cost one
+      duplicated voxel at the start and one **missing voxel at the end** of
+      the ray, i.e. the far end of the truncation band behind the surface.
+    - If the ray started exactly on a voxel boundary, it got `0/0 = NaN`
+      straight away and was traversed correctly by luck.
+
+    Rays with an exactly-zero component are rare in real data but common in
+    synthetic scenes: an axis-aligned room seen by a sensor at yaw 0, and
+    image rows or columns through the optical center. The code is identical
+    in the ROS 1 original (and in voxblox), so this is **not** a port
+    regression.
+
+    Fix: test `ray_scaled.c() == 0` instead. `signum()` returns 0 exactly
+    then, so a zero step sign always gets the `2.0` sentinel (beyond the
+    ray's t in [0, 1], never chosen), which was clearly the intent. For any
+    non-zero component the old and new expressions are identical, so only
+    rays with an exactly-zero component change.
+
+    Tests: `voxfield/test/test_ray_caster.cc` checks that axis-aligned rays
+    (from inside a voxel and from a boundary, both directions), in-plane
+    rays and general rays follow a valid 3D-DDA path from the start voxel to
+    the end voxel, one unit step at a time. It also checks that
+    `MergedTsdfIntegrator` integrates an axis-aligned ray from an off-grid
+    sensor through the whole truncation band. The 4 zero-component tests
+    fail on the old code, and the general-ray test passes on both.
+    `test_legacy_golden_tsdf`'s box-room scene has such rays: 617 voxel
+    values changed (same blocks), and its golden file was regenerated
+    (`VOXFIELD_WRITE_GOLDEN=1`). The NP golden, from the projective
+    integrator, is unchanged.
+
+    Found via multi-sensor Phase 7, whose "a point at (x, 0, 0) only
+    allocates the origin block" symptom was mostly a different effect:
+    `TsdfIntegratorBase::getVoxelWeight()`'s `1 / z^2` depth-camera weight
+    is 0 for a point with sensor-frame z = 0, so the point is skipped
+    entirely.
+
 ### `rcl_yaml_param_parser` gotcha found while writing the smoke test
 Multiple `--params-file` arguments for the same node merge with later
 files overriding earlier ones for a given parameter -- *except* when the
