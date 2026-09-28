@@ -96,7 +96,8 @@ const std::unordered_set<std::string>& forbiddenKeys() {
       "T_C_CH",
       "invert_T_C_CH",
       "enable_icp",
-      "body_frame"};
+      "body_frame",
+      "lidar_z_weighting"};
   return keys;
 }
 
@@ -224,6 +225,10 @@ void applyIntegratorAndProjectorOverrides(
     param(
         node, prefix + "weight_reduction_exp",
         sensor->np_tsdf.weight_reduction_exp);
+    // Also the TSDF integrator's LiDAR range weight.
+    param(
+        node, prefix + "weight_reduction_exp",
+        sensor->tsdf.weight_reduction_exp);
   }
   if (hasOverride(node, prefix + "normal_available")) {
     param(node, prefix + "normal_available", sensor->np_tsdf.normal_available);
@@ -245,6 +250,8 @@ void applyIntegratorAndProjectorOverrides(
   // Category D: range-image projection model.
   if (hasOverride(node, prefix + "sensor_is_lidar")) {
     param(node, prefix + "sensor_is_lidar", sensor->projector.sensor_is_lidar);
+    // Also selects the TSDF integrator's point weight model.
+    param(node, prefix + "sensor_is_lidar", sensor->tsdf.sensor_is_lidar);
   }
   if (hasOverride(node, prefix + "width")) {
     param(node, prefix + "width", sensor->projector.width);

@@ -1309,6 +1309,38 @@ that fail on the old code. Numbering is kept stable.
     is 0 for a point with sensor-frame z = 0, so the point is skipped
     entirely.
 
+15. **FIXED** (multi-sensor Phase 10, user's choice among three options):
+    `TsdfIntegratorBase::getVoxelWeight()` weighted every point by
+    `1 / z^2` in the sensor frame (when `use_const_weight` is false). That
+    is a depth-camera noise model, where z is depth. For a LiDAR, z is
+    height: points near its horizontal plane got huge weights (10000 at
+    z = 1 cm), and points exactly level with it got weight 0 and were
+    dropped before any ray was cast. Every LiDAR preset here (KITTI,
+    MaiCity, basement, Athena) runs with `use_const_weight: false`, so this
+    hit the `tsdf`, `voxblox`, `fiesta`, `voxedt` and `intensity` servers
+    on LiDAR data. The NP integrator (`np_tsdf`, `voxfield`) already used
+    `1 / range^weight_reduction_exp`. The code is identical in the ROS 1
+    original and in voxblox.
+
+    Fix: `TsdfIntegratorBase::Config` gains `sensor_is_lidar` and
+    `weight_reduction_exp`, read from the existing parameters of the same
+    name, which are also per-sensor overridable. A LiDAR now uses
+    `1 / range^weight_reduction_exp`, the NP integrator's model, so
+    voxblox-vs-voxfield comparisons differ only in algorithm. Cameras keep
+    `1 / z^2`. The new map-global `lidar_z_weighting` (default false)
+    restores the old LiDAR behavior, for reproducing earlier results.
+    Configs without `sensor_is_lidar` (it defaults to false) are unchanged,
+    including the legacy golden tests.
+
+    Tests: `voxfield/test/test_point_weight.cc` integrates single points and
+    checks the resulting voxel weight for a LiDAR (including z = 0, which
+    was dropped before, and z = 1 cm, which got 10000), a configurable
+    exponent, a camera (unchanged 1 / z^2), and `lidar_z_weighting` (which
+    reproduces the old values, including the dropped z = 0 point).
+    `test_sensor_config`'s new cases check that the parameters reach each
+    sensor's TSDF config and that `lidar_z_weighting` is map-global.
+    Real-bag effect: `docs/MULTI_SENSOR_NOTES.md` Phase 10.
+
 ### `rcl_yaml_param_parser` gotcha found while writing the smoke test
 Multiple `--params-file` arguments for the same node merge with later
 files overriding earlier ones for a given parameter -- *except* when the

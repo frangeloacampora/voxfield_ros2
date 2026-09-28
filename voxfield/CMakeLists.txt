@@ -151,6 +151,7 @@ if(BUILD_TESTING)
     test_esdf_voxfield_integrator
     test_esdf_occ_integrators
     test_ray_caster
+    test_point_weight
   )
   foreach(test_name ${VOXFIELD_TEST_NAMES})
     ament_add_gtest(${test_name} test/${test_name}.cc

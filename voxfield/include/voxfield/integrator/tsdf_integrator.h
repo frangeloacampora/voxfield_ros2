@@ -48,6 +48,19 @@ class TsdfIntegratorBase {
     FloatingPoint min_ray_length_m = 0.1;
     FloatingPoint max_ray_length_m = 5.0;
     bool use_const_weight = false;
+    /**
+     * Point weight model when use_const_weight is false. Depth cameras
+     * (default): 1 / z^2, z being the depth along the optical axis. LiDARs:
+     * 1 / range^weight_reduction_exp, the same model as
+     * NpTsdfIntegratorBase. A LiDAR's sensor-frame z is height, not depth,
+     * so 1 / z^2 gave points near its horizontal plane huge weights and
+     * dropped points with z == 0 (docs/MULTI_SENSOR_NOTES.md, Phase 10).
+     */
+    bool sensor_is_lidar = false;
+    float weight_reduction_exp = 1.0f;
+    /// Restores the upstream 1 / z^2 weight for LiDARs too, e.g. to reproduce
+    /// results computed before the LiDAR range weighting.
+    bool lidar_z_weighting = false;
     bool allow_clear = true;
     bool use_weight_dropoff = true;
     bool use_sparsity_compensation_factor = false;

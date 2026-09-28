@@ -231,6 +231,15 @@ float TsdfIntegratorBase::getVoxelWeight(const Point& point_C) const {
   if (config_.use_const_weight) {
     return 1.0f;
   }
+  if (config_.sensor_is_lidar && !config_.lidar_z_weighting) {
+    // See Config::sensor_is_lidar. Same model as
+    // NpTsdfIntegratorBase::getVoxelWeight().
+    const FloatingPoint range = point_C.norm();
+    if (range > kEpsilon) {
+      return 1.0f / std::pow(range, config_.weight_reduction_exp);
+    }
+    return 0.0f;
+  }
   const FloatingPoint dist_z = std::abs(point_C.z());
   if (dist_z > kEpsilon) {
     return 1.0f / (dist_z * dist_z);
@@ -608,6 +617,9 @@ std::string TsdfIntegratorBase::Config::print() const {
   ss << " - min_ray_length_m:                          " << min_ray_length_m << "\n"; // NOLINT
   ss << " - max_ray_length_m:                          " << max_ray_length_m << "\n"; // NOLINT
   ss << " - use_const_weight:                          " << use_const_weight << "\n"; // NOLINT
+  ss << " - sensor_is_lidar:                           " << sensor_is_lidar << "\n"; // NOLINT
+  ss << " - weight_reduction_exp:                      " << weight_reduction_exp << "\n"; // NOLINT
+  ss << " - lidar_z_weighting:                         " << lidar_z_weighting << "\n"; // NOLINT
   ss << " - allow_clear:                               " << allow_clear << "\n"; // NOLINT
   ss << " - use_weight_dropoff:                        " << use_weight_dropoff << "\n"; // NOLINT
   ss << " - use_sparsity_compensation_factor:          " << use_sparsity_compensation_factor << "\n"; // NOLINT

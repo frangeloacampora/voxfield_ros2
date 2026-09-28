@@ -205,10 +205,10 @@ The complete example, validated on a robot with two Livox LiDARs and two RGB-D c
 | `pointcloud_queue_size`, `input_qos_best_effort`, `min_time_between_msgs_sec` | Subscription depth, QoS and per-sensor throttle. |
 | `T_B_C`, `invert_T_B_C` | Extrinsic, only used when `use_tf_transforms: false`. |
 | `method`, `min_ray_length_m`, `max_ray_length_m`, `voxel_carving_enabled`, `allow_clear`, `use_const_weight`, `use_weight_dropoff`, `use_sparsity_compensation_factor`, `sparsity_compensation_factor`, `anti_grazing`, `merge_with_clear`, `start_voxel_subsampling_factor`, `max_consecutive_ray_collisions`, `clear_checks_every_n_frames`, `max_integration_time_s` | TSDF integrator. |
-| `weight_reduction_exp`, `normal_available`, `reliable_band_ratio`, `curve_assumption`, `reliable_normal_ratio_thre` | Non-projective integrator (`np_tsdf`, `voxfield`). |
-| `sensor_is_lidar`, `width`, `height`, `fov_up`, `fov_down`, `vx`, `vy`, `fx`, `fy`, `smooth_thre_ratio`, `min_z`, `min_dist` | Range-image model (`np_tsdf`, `voxfield`): LiDAR field of view, or camera intrinsics. |
+| `weight_reduction_exp`, `normal_available`, `reliable_band_ratio`, `curve_assumption`, `reliable_normal_ratio_thre` | Non-projective integrator (`np_tsdf`, `voxfield`). `weight_reduction_exp` is also the TSDF integrator's LiDAR range-weight exponent. |
+| `sensor_is_lidar`, `width`, `height`, `fov_up`, `fov_down`, `vx`, `vy`, `fx`, `fy`, `smooth_thre_ratio`, `min_z`, `min_dist` | Range-image model (`np_tsdf`, `voxfield`): LiDAR field of view, or camera intrinsics. `sensor_is_lidar` also selects every server's point weight model: 1 / z² for a depth camera, 1 / range^`weight_reduction_exp` for a LiDAR. |
 
-Map-global keys can't be set per sensor. They include the voxel size, truncation, threads, `world_frame`, `use_tf_transforms`, `enable_icp`, `body_frame`, and the `esdf_*`/`occ_*`/`mesh_*` and `publish_*`/`update_*` keys. Multi-sensor mode adds three global keys:
+Map-global keys can't be set per sensor. They include the voxel size, truncation, threads, `world_frame`, `use_tf_transforms`, `enable_icp`, `body_frame`, `lidar_z_weighting`, and the `esdf_*`/`occ_*`/`mesh_*` and `publish_*`/`update_*` keys. Multi-sensor mode adds three global keys:
 - `sensor_names`: the sensors to configure.
 - `body_frame`: the pose used for block removal and the clear sphere. The default `""` uses each sensor's own pose, as in legacy mode.
 - `transform_queue_retention_sec` (default 1.0): how much transform-queue history is kept for out-of-order lookups when `use_tf_transforms: false`.

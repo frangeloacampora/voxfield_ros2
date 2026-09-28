@@ -1301,9 +1301,9 @@ scope):
   `test_protobuf`, `test_layer`, `test_approx_hash_array`,
   `test_bucket_queue`, `test_ray_caster`, `test_esdf_voxfield_integrator`,
   `test_esdf_occ_integrators`, `test_tsdf_interpolator`, `test_layer_utils`
-  and `test_merge_integration`. `test_sdf_integrators` and
-  `test_clear_spheres` take tens of minutes unoptimized and weren't
-  finished at commit time.
+  and `test_merge_integration`, and later `test_clear_spheres` too.
+  `test_sdf_integrators` takes over half an hour unoptimized, and its
+  Debug result wasn't recorded.
 - The `setLocalRange()` block ranges (Voxfield, FIESTA, EDT) now floor
   explicitly. The previous `int64 / size_t` division was only correct by
   accident (`docs/BUG_voxfield_server_camera_mode_memory.md`).
@@ -1320,27 +1320,64 @@ scope):
   default to `tsdf`, `np_tsdf` and `intensity`. The launch files always set
   `name="voxfield_node"`, so only a bare `ros2 run` is affected.
 
-**Open question for the user, not changed:** `TsdfIntegratorBase::
-getVoxelWeight()` (used by the `tsdf`, `voxblox`, `fiesta`, `voxedt` and
-`intensity` servers) weights a point by `1 / z²` in the sensor frame, a
-depth-camera noise model where z is depth. For a z-up LiDAR, z is height:
-points near the horizontal plane get huge weights (10000 at z = 1 cm),
-and points with z = 0 get weight 0 and are dropped. That was the real
-cause of Phase 7's "a point at (x, 0, 0) only allocates the origin block".
-Every LiDAR preset here (KITTI, MaiCity, basement, Athena) sets
-`use_const_weight: false`. The NP integrator already weights by range
-(`1 / |p|^weight_reduction_exp`). Changing the TSDF integrator (e.g. range
-weighting when `sensor_is_lidar`) would change every LiDAR preset's
-voxblox/FIESTA/EDT output and the paper's baseline comparisons, so it is
-left for the user to decide.
+**LiDAR point weighting (user's decision: range weighting).**
+`TsdfIntegratorBase::getVoxelWeight()` (used by the `tsdf`, `voxblox`,
+`fiesta`, `voxedt` and `intensity` servers) weighted every point by
+`1 / z²` in the sensor frame, a depth-camera model. For a LiDAR, z is
+height: points near its horizontal plane got huge weights (10000 at
+z = 1 cm), and points with z = 0 were dropped. That was the real cause of
+Phase 7's "a point at (x, 0, 0) only allocates the origin block". Every
+LiDAR preset sets `use_const_weight: false`. Three options were put to the
+user: range weighting for LiDARs, constant weighting in the configs, or
+leaving it. The user chose range weighting ("Known upstream issues" #15 in
+`docs/ROS2_PORT_NOTES.md`):
+- LiDARs (`sensor_is_lidar: true`) now use `1 / range^weight_reduction_exp`,
+  the NP integrator's model.
+- Cameras keep `1 / z²`.
+- `lidar_z_weighting: true` restores the old behavior.
+
+Real bag, `voxblox_server`, rate 0.25, 60 s of bag, 30 m rays, ESDF off,
+scored with step 5's metric (`work/w_*`):
+
+| Run | Vertices | Accuracy median / p90 | Completeness 0.1 m / 0.2 m |
+|---|---|---|---|
+| both LiDARs, old `1/z²` (`lidar_z_weighting:=true`) | 68 366 | 0.126 / 0.355 m | 58.7 % / 82.0 % |
+| both LiDARs, range weighting | 42 795 | 0.116 / 0.352 m | 53.0 % / 65.9 % |
+| both LiDARs, range weighting + `anti_grazing` | 42 680 | 0.119 / 0.354 m | 51.4 % / 65.4 % |
+| front only, old `1/z²` | 55 352 | 0.115 / 0.324 m | 52.0 % / 80.1 % |
+| front only, range weighting | 40 141 | **0.094** / 0.309 m | **53.2 %** / 68.3 % |
+
+The `lidar_z_weighting` runs reproduce Phase 9's (c) and (a) almost
+exactly (68 301 / 55 371 vertices, same metric values), so the switch is
+faithful.
+
+Why the old model looked more complete: parsing the saved TSDFs
+(`tsdf_weights.py`) shows 5.7 % of all observed voxels (6.6 % of
+near-surface ones), 1.35 M voxels, pinned at `max_weight` (10000) under
+`1/z²`. A single near-horizontal point saturates a voxel, and no later
+observation can move it. Under range weighting none are at the cap (p99
+weight 110), so later rays can revise surfaces.
+- **Single LiDAR:** range weighting is 2 cm more accurate and at least as
+  complete within one voxel. The old model's extra completeness only
+  appears at 0.1–0.2 m: thick or offset surfaces frozen in place, not
+  extra real detail.
+- **Both LiDARs:** completeness within 0.1 m also drops (58.7 → 53.0 %).
+  That is the back LiDAR's ~1.4° extrinsic error (step 3). Its rays now
+  carve the front LiDAR's surfaces at range instead of being masked by
+  saturated voxels. `anti_grazing` doesn't change it, so it isn't
+  within-scan grazing.
+
+Calibrating the back LiDAR is the fix for that. The shipped 12 m
+`max_ray_length_m` also keeps most of it out.
 
 **Formatting and builds.** `clang-format` was run on the 14 C++ files this
 branch changed that were clean on its base. `test_server_map_io.cc`'s 6
 unformatted lines predate the branch, so it was left alone. `colcon build`
 succeeds both in the clean environment (`scripts/clean_env.sh`) and from
 scratch with the Hector underlay sourced (separate build and install
-directories). Final full suite, with every Phase 10 fix: `Summary: 176
-tests, 0 errors, 0 failures, 0 skipped`.
+directories). Full suite after the Phase 10 fixes above: `Summary: 176
+tests, 0 errors, 0 failures, 0 skipped`, and `Summary: 184 tests, 0
+errors, 0 failures, 0 skipped` after the LiDAR weighting change.
 
 **Follow-ups (not in this plan):**
 - Multi-sensor ICP: one designated `icp_sensor` whose correction applies

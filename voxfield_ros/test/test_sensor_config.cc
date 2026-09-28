@@ -111,6 +111,49 @@ TEST(SensorConfig, PerSensorOverrideInheritsFromTopLevel) {
   EXPECT_FLOAT_EQ(sensors[1].tsdf.max_ray_length_m, 5.0f);
 }
 
+TEST(SensorConfig, LidarWeightingReachesTsdfIntegrator) {
+  // sensor_is_lidar / weight_reduction_exp select the TSDF integrator's
+  // point weight model too (not just the NP projector/integrator), both at
+  // top level and per sensor; lidar_z_weighting is map-global.
+  auto node = makeNode(
+      "lidar_weighting",
+      {rclcpp::Parameter("sensor_is_lidar", true),
+       rclcpp::Parameter("weight_reduction_exp", 1.0),
+       rclcpp::Parameter("lidar_z_weighting", true),
+       rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
+       rclcpp::Parameter("sensors.a.topic", "topic_a"),
+       rclcpp::Parameter("sensors.b.topic", "topic_b"),
+       rclcpp::Parameter("sensors.b.sensor_is_lidar", false),
+       rclcpp::Parameter("sensors.b.weight_reduction_exp", 2.0)});
+  const TsdfIntegratorBase::Config tsdf_base =
+      getTsdfIntegratorConfigFromRosParam(*node);
+  EXPECT_TRUE(tsdf_base.sensor_is_lidar);
+  EXPECT_TRUE(tsdf_base.lidar_z_weighting);
+
+  const std::vector<LoadedSensor> sensors = loadSensors(
+      *node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
+  ASSERT_EQ(sensors.size(), 2u);
+  EXPECT_TRUE(sensors[0].tsdf.sensor_is_lidar);
+  EXPECT_FLOAT_EQ(sensors[0].tsdf.weight_reduction_exp, 1.0f);
+  EXPECT_FALSE(sensors[1].tsdf.sensor_is_lidar);
+  EXPECT_FLOAT_EQ(sensors[1].tsdf.weight_reduction_exp, 2.0f);
+  EXPECT_TRUE(sensors[1].tsdf.lidar_z_weighting);
+}
+
+TEST(SensorConfig, LidarZWeightingIsMapGlobal) {
+  auto node = makeNode(
+      "lidar_z_weighting_per_sensor",
+      {rclcpp::Parameter("sensor_names", std::vector<std::string>{"a"}),
+       rclcpp::Parameter("sensors.a.topic", "topic_a"),
+       rclcpp::Parameter("sensors.a.lidar_z_weighting", true)});
+  const TsdfIntegratorBase::Config tsdf_base =
+      getTsdfIntegratorConfigFromRosParam(*node);
+  EXPECT_THROW(
+      loadSensors(
+          *node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig()),
+      std::invalid_argument);
+}
+
 TEST(SensorConfig, FrameIsNotInheritedFromLegacySensorFrame) {
   // legacySensorConfig() here simulates a legacy sensor_frame of "unit_test"
   // (as if the top-level `sensor_frame` param were set); a multi-sensor

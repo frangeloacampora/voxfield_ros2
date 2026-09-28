@@ -135,6 +135,12 @@ TSDF Integrator Parameters
   The upper limit for the weight assigned to a voxel
 ``use_const_weight`` `false`
   If true all points along a ray have equal weighting
+``sensor_is_lidar`` `false`
+  Selects the point weight model when ``use_const_weight`` is false. Depth cameras (false): 1 / z², z being the depth along the optical axis. LiDARs (true): 1 / range^``weight_reduction_exp``, the same model the non-projective integrator uses. Also selects the range-image model of the ``np_tsdf``/``voxfield`` servers.
+``weight_reduction_exp`` `1.0`
+  Exponent of the LiDAR range weight (and of the non-projective integrator's weight)
+``lidar_z_weighting`` `false`
+  If true, LiDARs also use the depth-camera 1 / z² weight, as before this option existed. A LiDAR's sensor-frame z is height, so this gives points near its horizontal plane very large weights and drops points level with it; use only to reproduce earlier results
 ``allow_clear`` `true`
   If true points beyond the ``max_ray_length_m`` will be integrated up to this distance
 ``use_freespace_pointcloud`` `false`

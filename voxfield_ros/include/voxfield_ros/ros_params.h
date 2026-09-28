@@ -87,6 +87,11 @@ inline TsdfIntegratorBase::Config getTsdfIntegratorConfigFromRosParam(
   param(node, "max_weight", max_weight);
   integrator_config.max_weight = static_cast<float>(max_weight);
   param(node, "use_const_weight", integrator_config.use_const_weight);
+  // LiDAR point weighting (see TsdfIntegratorBase::Config::sensor_is_lidar).
+  // Same keys the NP integrator and range-image projector read.
+  param(node, "sensor_is_lidar", integrator_config.sensor_is_lidar);
+  param(node, "weight_reduction_exp", integrator_config.weight_reduction_exp);
+  param(node, "lidar_z_weighting", integrator_config.lidar_z_weighting);
   param(node, "use_weight_dropoff", integrator_config.use_weight_dropoff);
   param(node, "allow_clear", integrator_config.allow_clear);
   param(
