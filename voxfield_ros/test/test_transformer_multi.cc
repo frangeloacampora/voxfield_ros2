@@ -98,6 +98,22 @@ TEST(TransformerMulti, DifferentSensorsCanLookUpOutOfOrder) {
   EXPECT_NEAR(T_G_C_b.getPosition().z(), 0.0, 1e-6);
 }
 
+// ---- Shutdown: no deadlock when destroyed right after construction ----
+
+// tf2_ros::TransformListener(buffer)'s own spin thread could deadlock its
+// destructor when the Transformer was destroyed before that thread entered
+// spin() (the cancel() was lost). That hung RetentionWindowErasesOnlyOldEntries
+// once in a full colcon test run (docs/MULTI_SENSOR_NOTES.md Phase 9). The
+// Transformer now owns the thread and retries cancel(); building and tearing
+// one down repeatedly must always finish (CTest's timeout catches a hang).
+TEST(TransformerMulti, ImmediateDestructionDoesNotHang) {
+  auto node = makeTfModeNode("immediate_destruction");
+  for (int i = 0; i < 300; ++i) {
+    Transformer transformer(node);
+  }
+  SUCCEED();
+}
+
 // ---- Queue mode: retention window and size cap ----
 
 TEST(TransformerMulti, RetentionWindowErasesOnlyOldEntries) {

@@ -1,10 +1,12 @@
 #ifndef VOXFIELD_ROS_TRANSFORMER_H_
 #define VOXFIELD_ROS_TRANSFORMER_H_
 
+#include <atomic>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
+#include <thread>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <voxfield/core/common.h>
@@ -20,6 +22,10 @@ class Transformer {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
   explicit Transformer(rclcpp::Node::SharedPtr node);
+  ~Transformer();
+
+  Transformer(const Transformer&) = delete;
+  Transformer& operator=(const Transformer&) = delete;
 
   // Resolves T_G_C for `from_frame` at `timestamp`, via TF or the queue
   // (queue mode uses the global T_B_C_, so single-sensor callers get
@@ -117,6 +123,14 @@ class Transformer {
    */
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+  // The listener's /tf and /tf_static subscriptions live in their own
+  // callback group, spun by this dedicated executor thread (see the
+  // constructor), so TF keeps arriving while the node's own executor is
+  // busy (e.g. a multi-second ESDF update).
+  rclcpp::CallbackGroup::SharedPtr tf_callback_group_;
+  rclcpp::executors::SingleThreadedExecutor::SharedPtr tf_executor_;
+  std::thread tf_thread_;
+  std::atomic<bool> tf_thread_done_{false};
 
   // Only used if use_tf_transforms_ set to false.
   rclcpp::Subscription<geometry_msgs::msg::TransformStamped>::SharedPtr

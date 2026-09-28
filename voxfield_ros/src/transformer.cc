@@ -1,6 +1,7 @@
 #include "voxfield_ros/transformer.h"
 
 #include <algorithm>
+#include <chrono>
 
 #include "voxfield_ros/kindr_conversions.h"
 #include "voxfield_ros/param_utils.h"
@@ -39,7 +40,38 @@ Transformer::Transformer(rclcpp::Node::SharedPtr node)
   // member; keep that behavior identical here rather than making it
   // conditional on use_tf_transforms_.
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(node_->get_clock());
-  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+  // tf2_ros::TransformListener(buffer) would create its own node and spin
+  // it on a dedicated thread, but its destructor (cancel(), then join()) can
+  // hang forever: if cancel() runs before that thread has entered spin(),
+  // rclcpp's Executor::spin() still starts spinning afterwards and the
+  // cancel is lost. A Transformer destroyed within milliseconds of being
+  // built (test_transformer_multi, or a server shut down right after
+  // start-up) then deadlocks. So the dedicated thread is owned here instead,
+  // and ~Transformer() retries cancel() until the thread has actually left
+  // spin(). The subscriptions keep the listener's default QoS/options and
+  // are just moved into a callback group that is not added to the node's
+  // own executor, exactly like the listener's internal spin-thread setup.
+  tf_callback_group_ = node_->create_callback_group(
+      rclcpp::CallbackGroupType::MutuallyExclusive, false);
+  auto tf_options =
+      tf2_ros::detail::get_default_transform_listener_sub_options<>();
+  tf_options.callback_group = tf_callback_group_;
+  auto tf_static_options =
+      tf2_ros::detail::get_default_transform_listener_static_sub_options<>();
+  tf_static_options.callback_group = tf_callback_group_;
+  constexpr bool kSpinThread = false;
+  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(
+      *tf_buffer_, node_, kSpinThread, tf2_ros::DynamicListenerQoS(),
+      tf2_ros::StaticListenerQoS(), tf_options, tf_static_options);
+  tf_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+  tf_executor_->add_callback_group(
+      tf_callback_group_, node_->get_node_base_interface());
+  tf_thread_ = std::thread([this]() {
+    tf_executor_->spin();
+    tf_thread_done_ = true;
+  });
+  // Enables lookup timeouts, as the listener's own dedicated thread would.
+  tf_buffer_->setUsingDedicatedThread(true);
 
   if (!use_tf_transforms_) {
     transform_sub_ =
@@ -55,6 +87,16 @@ Transformer::Transformer(rclcpp::Node::SharedPtr node)
   // lookupTransformTf
   // Model transformation
   getTransformationParam(*node_, "T_C_CH", "invert_T_C_CH", &T_C_CH_);
+}
+
+Transformer::~Transformer() {
+  // See the constructor: a cancel() that lands before the thread enters
+  // spin() is lost, so keep cancelling until the thread has really exited.
+  while (!tf_thread_done_) {
+    tf_executor_->cancel();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  tf_thread_.join();
 }
 
 void Transformer::transformCallback(
