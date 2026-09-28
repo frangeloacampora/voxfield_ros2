@@ -133,6 +133,23 @@ void EsdfOccFiestaIntegrator::setLocalRange() {
     LOG(INFO) << "range_max: " << range_max_;
   }
 
+  // Same fix as EsdfVoxfieldIntegrator::setLocalRange()
+  // (docs/ROS2_PORT_NOTES.md "Known upstream issues" #12,
+  // docs/MULTI_SENSOR_NOTES.md Phase 9 step 7): upstream allocated *every* ESDF
+  // block in [range_min_, range_max_] here and never freed them. That box spans
+  // all voxels whose occupancy changed since the last update, so a 30 m
+  // 360-degree LiDAR at 0.1 m voxels allocated ~15 GB on the first update
+  // alone. The allocation is unnecessary: updateESDF() only changes voxels that
+  // are `observed`, and a voxel only becomes observed in updateFromOccBlocks(),
+  // which allocates its block. The insert/delete-list voxels are observed
+  // occupancy voxels in updated blocks, so they are allocated too. Blocks that
+  // only this loop would allocate hold nothing but unobserved voxels, and
+  // updateESDF() now treats a neighbor in an unallocated block like an
+  // unobserved one.
+  if (!config_.allocate_dense_local_range) {
+    return;
+  }
+
   // Allocate memory for the local ESDF map
   BlockIndex block_range_min, block_range_max;
   for (int i = 0; i <= 2; i++) {
@@ -284,7 +301,10 @@ void EsdfOccFiestaIntegrator::updateESDF() {
           if (voxInRange(nbr_vox_idx)) {
             EsdfVoxel* nbr_vox =
                 esdf_layer_->getVoxelPtrByGlobalIndex(nbr_vox_idx);
-            CHECK_NOTNULL(nbr_vox);
+            // Unallocated block == unobserved neighbor (see setLocalRange()).
+            if (nbr_vox == nullptr) {
+              continue;
+            }
             GlobalIndex nbr_coc_vox_idx = nbr_vox->coc_idx;
             if (nbr_vox->observed && nbr_coc_vox_idx(0) != UNDEF) {
               OccupancyVoxel* nbr_coc_occ_vox =
@@ -367,7 +387,10 @@ void EsdfOccFiestaIntegrator::updateESDF() {
         if (voxInRange(nbr_vox_idx)) {
           EsdfVoxel* nbr_vox =
               esdf_layer_->getVoxelPtrByGlobalIndex(nbr_vox_idx);
-          CHECK_NOTNULL(nbr_vox);
+          // Unallocated block == unobserved neighbor (see setLocalRange()).
+          if (nbr_vox == nullptr) {
+            continue;
+          }
           if (nbr_vox->observed && nbr_vox->coc_idx(0) != UNDEF) {
             float temp_dist = dist(nbr_vox->coc_idx, cur_vox_idx);
             if (temp_dist < std::abs(cur_vox->distance)) {
@@ -418,7 +441,10 @@ void EsdfOccFiestaIntegrator::updateESDF() {
       // check if this index is in the range and not updated yet
       if (voxInRange(nbr_vox_idx)) {
         EsdfVoxel* nbr_vox = esdf_layer_->getVoxelPtrByGlobalIndex(nbr_vox_idx);
-        CHECK_NOTNULL(nbr_vox);
+        // Unallocated block == unobserved neighbor (see setLocalRange()).
+        if (nbr_vox == nullptr) {
+          continue;
+        }
         if (nbr_vox->observed && std::abs(nbr_vox->distance) > 0.0) {
           float temp_dist = dist(cur_vox->coc_idx, nbr_vox_idx);
           if (temp_dist < std::abs(nbr_vox->distance)) {

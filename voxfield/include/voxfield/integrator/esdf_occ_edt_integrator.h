@@ -51,6 +51,16 @@ class EsdfOccEdtIntegrator {
 
     // Local map boundary size (unit: voxel)
     GlobalIndex range_boundary_offset = GlobalIndex(100, 100, 50);
+
+    /**
+     * Upstream behavior: allocate every ESDF block in the local range
+     * (the bounding box of all changed voxels plus range_boundary_offset) on
+     * each update. Off by default -- it only costs memory, which grows with
+     * the cube of the range (tens of GB for a 30 m 360-degree LiDAR at 0.1 m),
+     * and does not change the result (see setLocalRange()). Kept for the
+     * equivalence regression test.
+     */
+    bool allocate_dense_local_range = false;
   };
 
   EsdfOccEdtIntegrator(

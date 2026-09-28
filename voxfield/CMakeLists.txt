@@ -149,6 +149,7 @@ if(BUILD_TESTING)
     test_bucket_queue
     test_clear_spheres
     test_esdf_voxfield_integrator
+    test_esdf_occ_integrators
   )
   foreach(test_name ${VOXFIELD_TEST_NAMES})
     ament_add_gtest(${test_name} test/${test_name}.cc
