@@ -21,33 +21,175 @@ This repository also provides the implementation of other state-of-the-art metho
 
 Voxfield can be seamlessly integrated into those projects that originally use Voxblox as their volumetric mapping backbone (Cblox, Voxgraph, Kimera, etc). In addition, we provide an example on a multi-resolution panoptic mapping framework [**Panmap**](https://github.com/VIS4ROB-lab/voxfield-panmap) for high-fidelity large-scale semantic reconstruction.
 
-**This is a ROS 2 (Jazzy) port.** The packages, C++ namespace, include paths, protobuf package, message package, and RViz plugin are all renamed from `voxblox*` to `voxfield*` (see `docs/ROS2_PORT_NOTES.md` for the full rename log). This means Voxfield no longer masquerades as Voxblox: it can be installed and used *alongside* an unrelated `voxblox` ROS 2 install in the same workspace without symbol, protobuf, message, or RViz-plugin clashes. The trade-off is that projects built against upstream Voxblox (Cblox, Voxgraph, Kimera, Panmap) need their includes (`voxblox/...` → `voxfield/...`), namespace (`voxblox::` → `voxfield::`), and message package (`voxblox_msgs` → `voxfield_msgs`) updated to depend on Voxfield instead. Mapping algorithms, default parameter values, and all ROS topic/service/parameter names are otherwise unchanged from the original ROS 1 Voxfield, and the protobuf message format is wire-compatible, so `.tsdf`/`.esdf`/`.vxblx` map files saved by ROS 1 Voxfield or Voxblox still load here.
+**This is a ROS 2 (Jazzy) port.** The packages, C++ namespace, include paths, protobuf package, message package, and RViz plugin are all renamed from `voxblox*` to `voxfield*` (see `docs/ROS2_PORT_NOTES.md` for the full rename log). This means Voxfield no longer masquerades as Voxblox: it can be installed and used *alongside* an unrelated `voxblox` ROS 2 install in the same workspace without symbol, protobuf, message, or RViz-plugin clashes. The trade-off is that projects built against upstream Voxblox (Cblox, Voxgraph, Kimera, Panmap) need their includes (`voxblox/...` → `voxfield/...`), namespace (`voxblox::` → `voxfield::`), and message package (`voxblox_msgs` → `voxfield_msgs`) updated to depend on Voxfield instead. All ROS topic, service and parameter names are unchanged from the original ROS 1 Voxfield, and the protobuf map format is wire-compatible, so `.tsdf`/`.esdf`/`.vxblx` files saved by ROS 1 Voxfield or Voxblox still load here. The mapping algorithms are the originals, with the upstream bugs listed in `docs/ROS2_PORT_NOTES.md` ("Known upstream issues") fixed. The one fix that changes results on purpose: LiDAR points are now weighted by range instead of by their height above the sensor (set `lidar_z_weighting: true` to get the old behavior).
 
-ROS 1 support lives on in this repository's git history (tag/branch predating the ROS 2 port); this branch is ROS 2-only going forward.
+The original ROS 1 code is kept under the git tag `ros1`. `main` is ROS 2-only.
 
-## Installation
+## Project status
 
-Prerequisites: Ubuntu 24.04 with ROS 2 Jazzy installed (`/opt/ros/jazzy`).
+- **ROS 2 Jazzy port: complete.** All seven servers (`tsdf`, `np_tsdf`, `voxblox`, `voxfield`, `fiesta`, `voxedt`, `intensity`), the dataset launch files, RViz2 configs and the `voxfield_rviz_plugin` mesh display are ported.
+- **Multiple sensors in one map: complete.** Any number of LiDARs and depth cameras can feed one TSDF, ESDF and mesh ([details](#multiple-sensors-one-map)).
+- **Validated on real robot data:** bags from the Athena robot (two Livox LiDARs, two RGB-D cameras). Every server was checked on one bag, with map-quality measurements; `voxfield_server` also ran end to end in RViz2 on four bags. Synthetic smoke tests cover all servers, and the full test suite (188 tests) passes.
+- **Known limitations:**
+  - With both LiDARs at full 30 m range, mapping doesn't keep up at 1× playback; the shipped Athena config uses 12 m rays to stay real-time.
+  - On the Athena bags, the back LiDAR's recorded mounting angle is off by about 1.4°. Distant walls (beyond ~6 m) can look slightly doubled when both LiDARs are fused.
+  - The Livox `intensity` field isn't used (you'll see a harmless `Failed to find match for field 'intensity'` message).
+
+  Details, measurements and follow-ups are in `docs/MULTI_SENSOR_NOTES.md`.
+
+## Quick start
+
+### 1. Install
+
+You need Ubuntu 24.04 with [ROS 2 Jazzy](https://docs.ros.org/en/jazzy/Installation.html) installed in `/opt/ros/jazzy`.
 
 ```
-mkdir -p ~/voxfield_ws/src
-cd ~/voxfield_ws/src
-git clone <this-repo-url> voxfield_ros2
+mkdir -p ~/voxfield_ws/src && cd ~/voxfield_ws/src
+git clone https://github.com/frangeloacampora/voxfield_ros2.git
 cd ~/voxfield_ws
+source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src -y --ignore-src
-colcon build
+colcon build --symlink-install
 source install/setup.bash
 ```
 
-If a separate `voxblox` ROS 2 install is also sourced in your shell (e.g. from an unrelated project), Voxfield builds and runs alongside it without conflict — see `docs/ROS2_PORT_NOTES.md` §2.1 for how that's verified.
+The build is Release by default and takes a few minutes. Add `source ~/voxfield_ws/install/setup.bash` to every new terminal you use (or to your `~/.bashrc`).
 
-## Instructions
+If you use **conda** (or another Python that comes first on your `PATH`), ROS 2's Python tools break with errors like `No module named 'rclpy._rclpy_pybind11'`. Run commands through the included clean-environment wrapper, which sources only ROS 2 and this workspace:
 
-- To run the non-projective TSDF mapping and ESDF mapping of the proposed Voxfield, use the executables: ```np_tsdf_server``` and ```voxfield_server```. 
-- To run the original TSDF mapping and ESDF mapping of Voxblox, use the executables: ```tsdf_server``` and ```voxblox_server```. 
-- To run the ESDF mapping of FIESTA, use the executables: ```fiesta_server```.
-- To run the ESDF mapping of EDT, use the executables: ```voxedt_server```.
-- List of the ros services can be found [here](https://voxblox.readthedocs.io/en/latest/pages/The-Voxblox-Node.html), which should be the same as Voxblox.
+```
+~/voxfield_ws/src/voxfield_ros2/scripts/clean_env.sh colcon build --symlink-install
+~/voxfield_ws/src/voxfield_ros2/scripts/clean_env.sh ros2 launch voxfield_ros multi_sensor_mapping.launch.py ...
+```
+
+### 2. Run it on an Athena robot bag
+
+With a bag recorded on the Athena robot, one command plays the bag, runs the mapper on both Livox LiDARs, and opens RViz2:
+
+```
+C=$(ros2 pkg prefix voxfield_ros)/share/voxfield_ros/cfg/multi_sensor
+ros2 launch voxfield_ros multi_sensor_mapping.launch.py \
+    method:=voxfield \
+    param_file:=$C/athena_param.yaml \
+    sensors_file:=$C/athena_dual_lidar.yaml \
+    bag_file:=/path/to/your/athena_bag \
+    tf_remap_prefix:=/athena
+```
+
+- `tf_remap_prefix:=/athena` is needed because Athena publishes its transforms on `/athena/tf` and `/athena/tf_static` instead of `/tf` and `/tf_static`.
+- In RViz2 you'll see the **mesh** (coloured by surface direction) and the **ESDF slice**, a horizontal cut through the distance field at `slice_level` (0.5 m in `map`), coloured by distance to the nearest obstacle. The raw LiDAR clouds are there too, switched off; tick them in the Displays panel.
+- To also use the two RGB-D cameras, use `sensors_file:=$C/athena_lidar_rgbd.yaml` and add `rgbd:=true`. This starts the decoding chain that turns Athena's compressed depth images into point clouds.
+- `speed:=0.5` plays the bag at half speed. `start_offset:=<seconds>` skips the start of the bag, but only if the bag publishes `/tf_static` again later; most bags record it only at the beginning, and without it no mesh appears.
+- To use another mapping method, change `method:=` (see [Choosing a server](#choosing-a-server)).
+
+### 3. Run it on your own robot or bags
+
+You need two YAML files, a **parameter file** (map settings) and a **sensors file** (which topics to use), plus a TF tree that connects your map frame to each sensor.
+
+**a) Find your topics and frames.** For a bag:
+
+```
+ros2 bag info /path/to/bag                      # lists topics and message types
+ros2 bag play /path/to/bag                      # in a second terminal:
+ros2 topic echo --once --field header.frame_id /your/points_topic
+ros2 run tf2_ros tf2_echo map <that_frame_id>   # must print a transform
+```
+
+You need:
+- one `sensor_msgs/msg/PointCloud2` topic per sensor;
+- a TF path from your world frame (usually `map`, or `odom` if you have no localization) to each cloud's `frame_id`, available at the clouds' timestamps.
+
+A depth camera that only publishes images can be converted to point clouds with `depth_image_proc::PointCloudXyzNode` (see how `multi_sensor_mapping.launch.py` does it for Athena).
+
+**b) Write the sensors file.** Copy `cfg/multi_sensor/athena_dual_lidar.yaml` and adapt it:
+
+```yaml
+/**:
+  ros__parameters:
+    sensor_names: [front_lidar, rear_lidar]   # any names you like
+    # Settings shared by all sensors (each sensor can override any of them):
+    sensor_is_lidar: true
+    fov_up: 15.0          # LiDAR vertical field of view in degrees...
+    fov_down: -15.0       # ...(only needed for the voxfield / np_tsdf servers)
+    width: 360            # range-image size used by voxfield / np_tsdf
+    height: 32
+    sensors:
+      front_lidar:
+        topic: /front/points
+      rear_lidar:
+        topic: /rear/points
+        max_ray_length_m: 20.0      # example of a per-sensor override
+      # A depth camera sensor:
+      # front_camera:
+      #   topic: /camera/depth/points
+      #   sensor_is_lidar: false
+      #   width: 640
+      #   height: 480
+      #   fx: 525.0          # intrinsics from the camera's camera_info
+      #   fy: 525.0
+      #   vx: 319.5          # cx
+      #   vy: 239.5          # cy
+      #   max_ray_length_m: 4.0
+```
+
+- For **one sensor**, list just one name.
+- A sensor's frame comes from its cloud's `header.frame_id`; set `frame:` under the sensor only to override it.
+- For the voxfield/np_tsdf servers, `fov_up`/`fov_down` must cover your LiDAR's vertical range, and `width` × `height` controls how finely each scan is sampled. 360 × 32 worked well for the Livox Mid-360.
+- Any mistake (unknown key, missing topic, duplicate topic) stops the server at start-up with a message listing every problem.
+
+**c) Write the parameter file.** Copy `cfg/multi_sensor/athena_param.yaml` and change at least:
+- `world_frame`: your map frame (`map` or `odom`).
+- `body_frame`: your robot's base frame (e.g. `base_link`). Map areas far from the robot are dropped relative to this frame.
+- `tsdf_voxel_size` (and `esdf_voxel_size`, `occ_voxel_size`): 0.1 m suits a ground robot; smaller is more detailed but slower.
+- `max_ray_length_m`: how far each LiDAR point is used. Longer covers more but costs time.
+- `slice_level`: the height of the ESDF slice shown in RViz2.
+- Optionally `mesh_filename: /path/to/mesh.ply`, so `~/generate_mesh` saves the mesh to disk.
+
+**d) Run it:**
+
+```
+ros2 launch voxfield_ros multi_sensor_mapping.launch.py \
+    method:=voxfield \
+    param_file:=/path/to/my_param.yaml \
+    sensors_file:=/path/to/my_sensors.yaml \
+    bag_file:=/path/to/bag
+```
+
+- Add `tf_remap_prefix:=/ns` if your robot publishes TF on `/ns/tf` and `/ns/tf_static`.
+- For a **live robot** instead of a bag, leave out `bag_file` and add `use_sim_time:=false`.
+
+### 4. Save the map and mesh
+
+While the mapper runs:
+
+```
+ros2 service call /voxfield_node/save_map voxfield_msgs/srv/FilePath "{file_path: /path/to/map.tsdf}"
+ros2 service call /voxfield_node/generate_mesh std_srvs/srv/Empty "{}"   # writes mesh_filename
+```
+
+A saved map can be loaded back with `~/load_map`. The mesh is a standard PLY file (MeshLab, CloudCompare, Blender).
+
+### 5. If it runs too slowly or looks wrong
+
+- **The view lags behind the bag, or the log says `Input pointcloud queue getting too long` repeatedly:** the mapper can't keep up. In the parameter file, lower `max_ray_length_m`, raise `update_esdf_every_n_sec` (e.g. 5), or throttle sensors with `min_time_between_msgs_sec`. Or play the bag slower with `speed:=0.5`. One such message in the first seconds is normal while TF starts up.
+- **No mesh at all:** usually TF. Check that `ros2 run tf2_ros tf2_echo <world_frame> <cloud frame_id>` works, that `tf_remap_prefix` matches your TF topics, and that `/tf_static` isn't skipped by `start_offset`.
+- **Large empty areas in the mesh:** points beyond `max_ray_length_m` aren't used, and sparse or far-away surfaces need several hits before they appear. Increasing `max_ray_length_m` helps (at the cost of speed); smaller voxels make holes worse, not better.
+- **Doubled walls:** two sensors disagree about their mounting. Check the sensors' transforms in your robot description.
+
+## Choosing a server
+
+`method:=` in the launch files selects the executable `<method>_server`:
+
+| `method` | TSDF (surface) | ESDF (distance field) | Notes |
+|---|---|---|---|
+| `voxfield` | non-projective (Voxfield) | Voxfield | The method of the paper; most accurate surfaces. |
+| `np_tsdf` | non-projective (Voxfield) | none | Surface only. |
+| `voxblox` | ray casting (Voxblox) | Voxblox | Uses every LiDAR point, no range image. |
+| `tsdf` | ray casting (Voxblox) | none | Surface only. |
+| `fiesta` | ray casting | FIESTA | ESDF from an occupancy map. |
+| `voxedt` | ray casting | EDT | ESDF from an occupancy map. |
+
+All servers take the same inputs and parameters. The full list of services is in the [Services](#services) table below and in the [Voxblox documentation](https://voxblox.readthedocs.io/en/latest/pages/The-Voxblox-Node.html).
 
 ## ROS interface
 

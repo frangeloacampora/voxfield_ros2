@@ -1398,3 +1398,35 @@ errors, 0 failures, 0 skipped` after the LiDAR weighting change.
 - Livox's UINT8 `intensity` field doesn't match PCL's FLOAT32 `PointXYZI`
   (`Failed to find match for field 'intensity'`, cosmetic). A converter
   would restore intensity colouring.
+
+## End-to-end runs in RViz2 (after Phase 10)
+
+`multi_sensor_mapping.launch.py` was run with bag playback and RViz2 on
+four Athena bags with `voxfield_server`: `rosbag2_2026_09_23-14_32_47`
+(1× with the shipped 12 m config, and 0.5× with 30 m rays),
+`-14_11_34`, `-13_40_18` (both 1×), and `maze_semi_finals_1_bag`.
+Memory was sampled only once, early in `-13_40_18` (about 2 GB), but no
+run showed memory trouble.
+
+Three bugs showed up only in the live RViz2 view, all fixed with the
+tests noted:
+- **The mesh never rendered.** `voxfield_rviz_plugin` passed no resource
+  group to `ManualObject::begin()`. Ogre 1.9 (ROS 1) searched all
+  groups; Ogre 1.12+ (`rviz_ogre_vendor`) only `General`, while the
+  materials live in `VoxfieldMaterials`. A port bug, found only by looking.
+- **The robot-model marker was published even with
+  `publish_robot_model: false`** ("Known upstream issues" #16), which
+  flooded RViz2 with `Could not load resource [file://]`. New
+  `RobotModelMarker` tests.
+- **The raw point cloud displays covered the mesh and ESDF slice.**
+  `multi_sensor.rviz` now starts with them off.
+
+Maze bag: its localization diverges at about 24–55 s, so it was played
+from `start_offset:=56`. The bag records `/tf_static` only at start-up
+(12 messages), so the static transforms were replayed separately once
+the server was up (`ros2 bag play ... --topics /athena/tf_static
+--playback-duration 10` with `tf_static_qos_override.yaml`). The map then
+built normally.
+
+**Final state:** `Summary: 188 tests, 0 errors, 0 failures, 0 skipped`.
+The README has a quick start for Athena bags and for other robots.

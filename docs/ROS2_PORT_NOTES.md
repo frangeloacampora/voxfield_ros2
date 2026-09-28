@@ -1341,6 +1341,17 @@ that fail on the old code. Numbering is kept stable.
     sensor's TSDF config and that `lidar_z_weighting` is map-global.
     Real-bag effect: `docs/MULTI_SENSOR_NOTES.md` Phase 10.
 
+16. **FIXED** (found in the multi-sensor end-to-end RViz2 runs):
+    `TsdfServer`/`NpTsdfServer` read `publish_robot_model` but never
+    checked it, identically in ROS 1, so the `~/Robot_model` marker was
+    published for every cloud of the primary sensor regardless. With no
+    `robot_model_file`, RViz2 logged `Could not load resource [file://]`
+    for each marker. The marker is now published only when
+    `publish_robot_model` is true. All dataset presets set it true, so
+    they are unchanged. Test: `RobotModelMarker.*` in
+    `test_multi_sensor_server.cc`, built for both servers; the disabled
+    case fails without the fix.
+
 ### `rcl_yaml_param_parser` gotcha found while writing the smoke test
 Multiple `--params-file` arguments for the same node merge with later
 files overriding earlier ones for a given parameter -- *except* when the
