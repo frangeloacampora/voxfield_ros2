@@ -1,7 +1,6 @@
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
-
-#include <algorithm>
 
 #include "voxfield_ros/param_utils.h"
 
@@ -133,8 +132,8 @@ TEST(ParamUtils, StringArrayOverride) {
   auto node = makeNode(
       "test_string_array_override",
       {rclcpp::Parameter(
-          "sensor_names", std::vector<std::string>{"front_lidar",
-                                                     "back_lidar"})});
+          "sensor_names",
+          std::vector<std::string>{"front_lidar", "back_lidar"})});
   const std::vector<std::string> names =
       getParam<std::vector<std::string>>(*node, "sensor_names", {});
   ASSERT_EQ(names.size(), 2u);

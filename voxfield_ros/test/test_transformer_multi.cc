@@ -3,13 +3,11 @@
 // retention window (fixes A8: the old "erase everything up to this lookup's
 // bracket" policy broke with >1 sensor), and TF-mode frame resolution with
 // no hidden sensor_frame_ override (the mechanism F1 relies on).
-#include <gtest/gtest.h>
-
-#include <memory>
-#include <string>
-
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <gtest/gtest.h>
+#include <memory>
 #include <rclcpp/rclcpp.hpp>
+#include <string>
 
 #include "voxfield_ros/kindr_conversions.h"
 #include "voxfield_ros/transformer.h"
@@ -179,7 +177,7 @@ TEST(TransformerMulti, TfModeUsesTheGivenFrameForEachSensor) {
   const rclcpp::Time stamp(kStampNs, RCL_ROS_TIME);
 
   auto broadcastStatic = [&](const std::string& child_frame,
-                              const Transformation& T) {
+                             const Transformation& T) {
     geometry_msgs::msg::TransformStamped msg;
     msg.header.frame_id = "map";  // world_frame_
     msg.header.stamp = stamp;

@@ -1,10 +1,9 @@
 #ifndef VOXFIELD_ROS_SENSOR_CONFIG_LOADER_H_
 #define VOXFIELD_ROS_SENSOR_CONFIG_LOADER_H_
 
+#include <rclcpp/rclcpp.hpp>
 #include <string>
 #include <vector>
-
-#include <rclcpp/rclcpp.hpp>
 #include <voxfield/integrator/np_tsdf_integrator.h>
 #include <voxfield/integrator/tsdf_integrator.h>
 

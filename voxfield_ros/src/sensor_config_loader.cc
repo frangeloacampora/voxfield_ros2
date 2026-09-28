@@ -18,9 +18,15 @@ namespace {
 // `enable_anti_grazing`.
 const std::unordered_set<std::string>& sensorConfigKeys() {
   static const std::unordered_set<std::string> keys = {
-      "topic", "freespace_topic", "frame", "pointcloud_queue_size",
-      "input_qos_best_effort", "min_time_between_msgs_sec", "T_B_C",
-      "invert_T_B_C", "method"};
+      "topic",
+      "freespace_topic",
+      "frame",
+      "pointcloud_queue_size",
+      "input_qos_best_effort",
+      "min_time_between_msgs_sec",
+      "T_B_C",
+      "invert_T_B_C",
+      "method"};
   return keys;
 }
 
@@ -56,20 +62,41 @@ const std::unordered_set<std::string>& npIntegratorKeys() {
 // RangeImageProjector::Config only.
 const std::unordered_set<std::string>& projectorKeys() {
   static const std::unordered_set<std::string> keys = {
-      "sensor_is_lidar", "width",  "height", "fov_up",
-      "fov_down",        "vx",     "vy",     "fx",
-      "fy",              "smooth_thre_ratio", "min_z", "min_dist"};
+      "sensor_is_lidar",
+      "width",
+      "height",
+      "fov_up",
+      "fov_down",
+      "vx",
+      "vy",
+      "fx",
+      "fy",
+      "smooth_thre_ratio",
+      "min_z",
+      "min_dist"};
   return keys;
 }
 
 // MULTI_SENSOR_PLAN.md §7.2: map-global, forbidden per sensor.
 const std::unordered_set<std::string>& forbiddenKeys() {
   static const std::unordered_set<std::string> keys = {
-      "tsdf_voxel_size",  "tsdf_voxels_per_side", "voxel_size",
-      "voxels_per_side_in_block", "truncation_distance", "max_weight",
-      "integrator_threads", "integration_order_mode", "weight_dropoff_epsilon",
-      "world_frame", "use_tf_transforms", "T_B_D", "invert_T_B_D", "T_C_CH",
-      "invert_T_C_CH", "enable_icp", "body_frame"};
+      "tsdf_voxel_size",
+      "tsdf_voxels_per_side",
+      "voxel_size",
+      "voxels_per_side_in_block",
+      "truncation_distance",
+      "max_weight",
+      "integrator_threads",
+      "integration_order_mode",
+      "weight_dropoff_epsilon",
+      "world_frame",
+      "use_tf_transforms",
+      "T_B_D",
+      "invert_T_B_D",
+      "T_C_CH",
+      "invert_T_C_CH",
+      "enable_icp",
+      "body_frame"};
   return keys;
 }
 
@@ -86,7 +113,7 @@ bool isForbiddenByPrefix(const std::string& key) {
 
 bool isWhitelisted(const std::string& key) {
   return sensorConfigKeys().count(key) > 0 || integratorKeys().count(key) > 0 ||
-      npIntegratorKeys().count(key) > 0 || projectorKeys().count(key) > 0;
+         npIntegratorKeys().count(key) > 0 || projectorKeys().count(key) > 0;
 }
 
 bool isValidNameChar(char c) {
@@ -107,13 +134,11 @@ void applyIntegratorAndProjectorOverrides(
   // Category B: shared by both integrator Config structs.
   if (hasOverride(node, prefix + "min_ray_length_m")) {
     param(node, prefix + "min_ray_length_m", sensor->tsdf.min_ray_length_m);
-    param(
-        node, prefix + "min_ray_length_m", sensor->np_tsdf.min_ray_length_m);
+    param(node, prefix + "min_ray_length_m", sensor->np_tsdf.min_ray_length_m);
   }
   if (hasOverride(node, prefix + "max_ray_length_m")) {
     param(node, prefix + "max_ray_length_m", sensor->tsdf.max_ray_length_m);
-    param(
-        node, prefix + "max_ray_length_m", sensor->np_tsdf.max_ray_length_m);
+    param(node, prefix + "max_ray_length_m", sensor->np_tsdf.max_ray_length_m);
   }
   if (hasOverride(node, prefix + "voxel_carving_enabled")) {
     param(
@@ -129,12 +154,10 @@ void applyIntegratorAndProjectorOverrides(
   }
   if (hasOverride(node, prefix + "use_const_weight")) {
     param(node, prefix + "use_const_weight", sensor->tsdf.use_const_weight);
-    param(
-        node, prefix + "use_const_weight", sensor->np_tsdf.use_const_weight);
+    param(node, prefix + "use_const_weight", sensor->np_tsdf.use_const_weight);
   }
   if (hasOverride(node, prefix + "use_weight_dropoff")) {
-    param(
-        node, prefix + "use_weight_dropoff", sensor->tsdf.use_weight_dropoff);
+    param(node, prefix + "use_weight_dropoff", sensor->tsdf.use_weight_dropoff);
     param(
         node, prefix + "use_weight_dropoff",
         sensor->np_tsdf.use_weight_dropoff);
@@ -157,13 +180,11 @@ void applyIntegratorAndProjectorOverrides(
   }
   if (hasOverride(node, prefix + "anti_grazing")) {
     param(node, prefix + "anti_grazing", sensor->tsdf.enable_anti_grazing);
-    param(
-        node, prefix + "anti_grazing", sensor->np_tsdf.enable_anti_grazing);
+    param(node, prefix + "anti_grazing", sensor->np_tsdf.enable_anti_grazing);
   }
   if (hasOverride(node, prefix + "merge_with_clear")) {
     param(node, prefix + "merge_with_clear", sensor->tsdf.merge_with_clear);
-    param(
-        node, prefix + "merge_with_clear", sensor->np_tsdf.merge_with_clear);
+    param(node, prefix + "merge_with_clear", sensor->np_tsdf.merge_with_clear);
   }
   if (hasOverride(node, prefix + "start_voxel_subsampling_factor")) {
     param(
@@ -205,8 +226,7 @@ void applyIntegratorAndProjectorOverrides(
         sensor->np_tsdf.weight_reduction_exp);
   }
   if (hasOverride(node, prefix + "normal_available")) {
-    param(
-        node, prefix + "normal_available", sensor->np_tsdf.normal_available);
+    param(node, prefix + "normal_available", sensor->np_tsdf.normal_available);
   }
   if (hasOverride(node, prefix + "reliable_band_ratio")) {
     param(
@@ -214,8 +234,7 @@ void applyIntegratorAndProjectorOverrides(
         sensor->np_tsdf.reliable_band_ratio);
   }
   if (hasOverride(node, prefix + "curve_assumption")) {
-    param(
-        node, prefix + "curve_assumption", sensor->np_tsdf.curve_assumption);
+    param(node, prefix + "curve_assumption", sensor->np_tsdf.curve_assumption);
   }
   if (hasOverride(node, prefix + "reliable_normal_ratio_thre")) {
     param(
@@ -225,8 +244,7 @@ void applyIntegratorAndProjectorOverrides(
 
   // Category D: range-image projection model.
   if (hasOverride(node, prefix + "sensor_is_lidar")) {
-    param(
-        node, prefix + "sensor_is_lidar", sensor->projector.sensor_is_lidar);
+    param(node, prefix + "sensor_is_lidar", sensor->projector.sensor_is_lidar);
   }
   if (hasOverride(node, prefix + "width")) {
     param(node, prefix + "width", sensor->projector.width);
@@ -269,7 +287,7 @@ bool sensorNamesPresent(rclcpp::Node& node) {
   const auto& overrides =
       node.get_node_parameters_interface()->get_parameter_overrides();
   return node.has_parameter("sensor_names") ||
-      overrides.count("sensor_names") > 0;
+         overrides.count("sensor_names") > 0;
 }
 
 }  // namespace
@@ -289,11 +307,13 @@ std::vector<LoadedSensor> loadSensors(
     }
     LoadedSensor sensor;
     sensor.input = legacy_input;
-    sensor.tsdf = tsdf_base != nullptr ? *tsdf_base : TsdfIntegratorBase::Config();
+    sensor.tsdf =
+        tsdf_base != nullptr ? *tsdf_base : TsdfIntegratorBase::Config();
     sensor.np_tsdf =
         np_base != nullptr ? *np_base : NpTsdfIntegratorBase::Config();
-    sensor.projector =
-        projector_base != nullptr ? *projector_base : RangeImageProjector::Config();
+    sensor.projector = projector_base != nullptr
+                           ? *projector_base
+                           : RangeImageProjector::Config();
     sensor.method = legacy_method;
     return {sensor};
   }
@@ -335,8 +355,7 @@ std::vector<LoadedSensor> loadSensors(
     const size_t dot = rest.find('.');
     if (dot == std::string::npos) {
       errors.push_back(
-          "'" + full_key +
-          "' is not of the form sensors.<name>.<key>");
+          "'" + full_key + "' is not of the form sensors.<name>.<key>");
       continue;
     }
     const std::string name = rest.substr(0, dot);
@@ -355,8 +374,7 @@ std::vector<LoadedSensor> loadSensors(
     }
     if (!isWhitelisted(key)) {
       errors.push_back(
-          "'" + full_key + "': unknown per-sensor key '" + key +
-          "' (typo?)");
+          "'" + full_key + "': unknown per-sensor key '" + key + "' (typo?)");
     }
   }
 
@@ -380,11 +398,13 @@ std::vector<LoadedSensor> loadSensors(
     sensor.input.freespace_topic.clear();
     sensor.input.frame.clear();
     sensor.input.has_T_B_C = false;
-    sensor.tsdf = tsdf_base != nullptr ? *tsdf_base : TsdfIntegratorBase::Config();
+    sensor.tsdf =
+        tsdf_base != nullptr ? *tsdf_base : TsdfIntegratorBase::Config();
     sensor.np_tsdf =
         np_base != nullptr ? *np_base : NpTsdfIntegratorBase::Config();
-    sensor.projector =
-        projector_base != nullptr ? *projector_base : RangeImageProjector::Config();
+    sensor.projector = projector_base != nullptr
+                           ? *projector_base
+                           : RangeImageProjector::Config();
     sensor.method = legacy_method;
 
     const std::string prefix = "sensors." + name + ".";
@@ -430,7 +450,8 @@ std::vector<LoadedSensor> loadSensors(
     if (is_np_server) {
       std::string why;
       if (!sensor.projector.isValid(&why)) {
-        errors.push_back("sensor '" + name + "': invalid projector config: " + why);
+        errors.push_back(
+            "sensor '" + name + "': invalid projector config: " + why);
       }
     }
 
@@ -441,7 +462,8 @@ std::vector<LoadedSensor> loadSensors(
   // identical T_B_C (almost always a config mistake). Sensors that didn't
   // override T_B_C all inherit the same global one, so 2+ of those already
   // qualify; also flag exact duplicate explicit overrides.
-  const bool use_tf_transforms = getParam<bool>(node, "use_tf_transforms", true);
+  const bool use_tf_transforms =
+      getParam<bool>(node, "use_tf_transforms", true);
   if (!use_tf_transforms) {
     size_t inherited_count = 0;
     for (const LoadedSensor& sensor : sensors) {
@@ -490,10 +512,10 @@ std::vector<LoadedSensor> loadSensors(
       std::string model_desc;
       if (sensor.projector.sensor_is_lidar) {
         model_desc = "lidar fov=[" + std::to_string(sensor.projector.fov_up) +
-            ", " + std::to_string(sensor.projector.fov_down) + "]deg";
+                     ", " + std::to_string(sensor.projector.fov_down) + "]deg";
       } else {
         model_desc = "camera fx=" + std::to_string(sensor.projector.fx) +
-            " fy=" + std::to_string(sensor.projector.fy);
+                     " fy=" + std::to_string(sensor.projector.fy);
       }
       RCLCPP_INFO(
           node.get_logger(),

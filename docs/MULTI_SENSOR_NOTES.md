@@ -342,7 +342,11 @@ the full `colcon test` alongside `voxfield`'s ~35s build; re-running it
 standalone and via `--ctest-args -R test_transformer_multi` both passed
 immediately, and a full re-run of the whole suite came back clean at 137/0/0/4
 — treated as ctest-level resource contention under load, not a code
-regression, since nothing in this phase touches `Transformer`. `git status`
+regression, since nothing in this phase touches `Transformer`. *(Later
+corrected: this was a real, intermittent deadlock in `Transformer`'s
+`tf2_ros::TransformListener` shutdown, which also shows up as a missing
+result file after the 60 s timeout. Fixed in Phase 9, "A shutdown deadlock
+in `Transformer`".)* `git status`
 after this phase touches only new `voxfield_ros` files plus `CMakeLists.txt`.
 
 ## Phase 5: `TsdfServer` multi-sensor frontend
@@ -530,6 +534,7 @@ both started against a `sensor_names: [front, back]` config and showed
 `voxfield_server`'s own node name) — a pre-existing quirk in
 `np_tsdf_server_node.cc`, unrelated to this plan; noted here only because
 it wasted a few minutes guessing the wrong node name for `ros2 node info`.
+*(Fixed in Phase 10: see "Pre-existing bugs fixed in Phase 10".)*
 
 **Full suite:** `Summary: 147 tests, 0 errors, 0 failures, 4 skipped` (143
 + 3 new `test_multi_sensor_server_np_tsdf` cases + 1 new CTest aggregate
@@ -589,7 +594,13 @@ caller (single- or multi-sensor) whose sensor happens to produce an
 axis-aligned ray (e.g. a purely horizontal or vertical calibration ray in a
 test fixture). The multi-sensor test itself was fixed by giving its points
 a small deliberate z offset (0.3 m), matching how every other geometry in
-this file already avoids the case incidentally.
+this file already avoids the case incidentally. *(Corrected in Phase 10: the symptom above
+was mainly `TsdfIntegratorBase::getVoxelWeight()`. Its `1 / z^2`
+depth-camera weight is 0 for a point with sensor-frame z = 0, so such a
+point is skipped entirely, and a z offset "fixes" it. Investigating it
+still turned up a real ray-caster bug for rays with an exactly-zero
+component, now fixed: "Known upstream issues" #14 in
+`docs/ROS2_PORT_NOTES.md`. The weighting question is in Phase 10.)*
 
 **Step 3 (optional `~/sensor_status` `DiagnosticArray`, M15): skipped,
 time-boxed**, exactly as the plan allows ("Skip it if time-boxed; say so in
@@ -1232,3 +1243,121 @@ in 0.9 s.
 - **Full suite:** `Summary: 170 tests, 0 errors, 0 failures, 0 skipped`
   (164 after the smoke-coverage fix, plus the new FIESTA/EDT integrator
   and `Transformer` tests).
+
+## Phase 10: Docs and cleanup
+
+**README.** New "Multiple sensors (one map)" section:
+- The concept, legacy vs multi-sensor mode, and an example config (the
+  measured Athena values, not the plan's §7.5 placeholders).
+- The per-sensor key table and the map-global and new global keys.
+- The frame-counting (M12) and ICP (M11) caveats.
+- `multi_sensor_mapping.launch.py` with `tf_remap_prefix`, and the
+  RGB-D-via-`depth_image_proc` recipe.
+
+The `pointcloud` input row now says "legacy mode only". The pose
+paragraph mentions F1 (an empty `sensor_frame` uses `header.frame_id`).
+The services table was already updated for the `fiesta`/`voxedt`
+`save_map` fix.
+
+**Where the decisions are recorded** (all in this file):
+- F1 (empty frame → the cloud's own frame, instead of failing forever):
+  Phases 3 and 5.
+- M6 (the transform queue keeps a retention window instead of erasing
+  everything before each lookup), with the test that fails on the old
+  code: Phase 3.
+- M9 body frame: Phases 5 and 7. M11/M10: Phase 5. M12: Phase 8's configs
+  and the README.
+- Real-bag measurements and defaults: Phase 9.
+
+**Legacy `ros2 param dump` diff (pitfall 1).** Never recorded in Phases
+2–6, so it was done here. Commit `82eed25` (Phase 1, before the refactor)
+was built in a worktree with its own build and install directories. The
+same legacy servers were started from both builds with `kitti_param.yaml`
++ `kitti_calib.yaml` (no `sensor_names`), and `ros2 param dump
+/voxfield_node` was diffed. `voxfield_server`, `voxblox_server`,
+`fiesta_server` and `np_tsdf_server` all differ in exactly the same way:
+- `body_frame: ''` and `transform_queue_retention_sec: 1.0`, the two new
+  globals the plan allows.
+- `qos_overrides./tf.subscription.*` and
+  `qos_overrides./tf_static.subscription.*` (depth 100, reliable;
+  read-only). rclcpp declares these for the TF listener's subscriptions.
+  Since the Phase 9 `Transformer` deadlock fix, those subscriptions live
+  on the server's node instead of tf2's hidden internal node, so they now
+  appear in the dump. The values are the listener's defaults, and
+  behavior is unchanged.
+
+No existing parameter changed its name, type or default.
+
+**Pre-existing bugs fixed in Phase 10** (the user asked for every
+documented bug to be fixed, including ones earlier plans put out of
+scope):
+- `RayCaster` zero-component guard ("Known upstream issues" #14):
+  axis-aligned rays repeated their first voxel and dropped their last one.
+  The legacy TSDF golden file was regenerated (617 voxel values; same
+  blocks).
+- `test_tsdf_map`'s `BlockAllocation` aborted in Debug builds (a
+  `DCHECK`). It was checking idempotency with the "new" allocation API. In
+  a Debug build of `voxfield`, 11 tests now pass: `test_tsdf_map`,
+  `test_protobuf`, `test_layer`, `test_approx_hash_array`,
+  `test_bucket_queue`, `test_ray_caster`, `test_esdf_voxfield_integrator`,
+  `test_esdf_occ_integrators`, `test_tsdf_interpolator`, `test_layer_utils`
+  and `test_merge_integration`. `test_sdf_integrators` and
+  `test_clear_spheres` take tens of minutes unoptimized and weren't
+  finished at commit time.
+- The `setLocalRange()` block ranges (Voxfield, FIESTA, EDT) now floor
+  explicitly. The previous `int64 / size_t` division was only correct by
+  accident (`docs/BUG_voxfield_server_camera_mode_memory.md`).
+- `Layer::isCompatible()`'s warning printed the loaded and current layer
+  types swapped.
+- Timing labels: the voxblox ESDF integrator reported as
+  `upate_esdf/voxfield/...` (a rename-script mislabel plus a typo). It is
+  now `update_esdf/voxblox/...`, and EDT's is `update_esdf/edt/...`.
+- Default node names collided: `tsdf_server`, `voxblox_server` and
+  `intensity_server` were all `voxblox`, and `np_tsdf_server` and
+  `voxfield_server` were both `voxfield`, as in ROS 1. Two such nodes
+  started side by side would share a name, and so their parameters and
+  services. `tsdf_server`, `np_tsdf_server` and `intensity_server` now
+  default to `tsdf`, `np_tsdf` and `intensity`. The launch files always set
+  `name="voxfield_node"`, so only a bare `ros2 run` is affected.
+
+**Open question for the user, not changed:** `TsdfIntegratorBase::
+getVoxelWeight()` (used by the `tsdf`, `voxblox`, `fiesta`, `voxedt` and
+`intensity` servers) weights a point by `1 / z²` in the sensor frame, a
+depth-camera noise model where z is depth. For a z-up LiDAR, z is height:
+points near the horizontal plane get huge weights (10000 at z = 1 cm),
+and points with z = 0 get weight 0 and are dropped. That was the real
+cause of Phase 7's "a point at (x, 0, 0) only allocates the origin block".
+Every LiDAR preset here (KITTI, MaiCity, basement, Athena) sets
+`use_const_weight: false`. The NP integrator already weights by range
+(`1 / |p|^weight_reduction_exp`). Changing the TSDF integrator (e.g. range
+weighting when `sensor_is_lidar`) would change every LiDAR preset's
+voxblox/FIESTA/EDT output and the paper's baseline comparisons, so it is
+left for the user to decide.
+
+**Formatting and builds.** `clang-format` was run on the 14 C++ files this
+branch changed that were clean on its base. `test_server_map_io.cc`'s 6
+unformatted lines predate the branch, so it was left alone. `colcon build`
+succeeds both in the clean environment (`scripts/clean_env.sh`) and from
+scratch with the Hector underlay sourced (separate build and install
+directories). Final full suite, with every Phase 10 fix: `Summary: 176
+tests, 0 errors, 0 failures, 0 skipped`.
+
+**Follow-ups (not in this plan):**
+- Multi-sensor ICP: one designated `icp_sensor` whose correction applies
+  to all sensors (M11).
+- Motion deskew of LiDAR sweeps, since the robot moves during a 100 ms
+  Livox scan.
+- A self-filter (robot body box). Phase 9 found no persistent self-hits
+  on Athena with `min_ray_length_m: 0.3`, but other robots may differ.
+- Per-sensor voxel downsampling before integration. Dense RGB-D clouds
+  currently rely on the `merged` integrator's per-voxel bundling and on
+  throttling.
+- `CameraInfo`-driven intrinsics: a per-sensor `camera_info_topic` instead
+  of `fx`/`fy`/`vx`/`vy` copied into YAML.
+- A multi-threaded executor, running the ESDF update off the subscription
+  thread with TSDF/ESDF locking, for full-range (30 m) real-time mapping
+  (Phase 9 step 4).
+- Calibrate the Athena back LiDAR's extrinsic (~1.4°, Phase 9 step 3).
+- Livox's UINT8 `intensity` field doesn't match PCL's FLOAT32 `PointXYZI`
+  (`Failed to find match for field 'intensity'`, cosmetic). A converter
+  would restore intensity colouring.

@@ -3,12 +3,10 @@
 // camera-model regression cases 1:1 (same assertions; no ROS node needed
 // here since RangeImageProjector has no ROS dependency), plus a new LiDAR
 // round-trip case (Phase 2 step 4).
-#include <gtest/gtest.h>
-
 #include <algorithm>
 #include <cmath>
+#include <gtest/gtest.h>
 #include <limits>
-
 #include <opencv2/core.hpp>
 
 #include "voxfield_ros/range_image_projector.h"
@@ -66,8 +64,7 @@ RangeImage project(
 
 // ---- #2: projectPointToImageCamera() returned bool into a float depth ----
 
-TEST(
-    RangeImageProjectorCamera, ProjectionReturnsRangeAndRejectsInvalidPoints) {
+TEST(RangeImageProjectorCamera, ProjectionReturnsRangeAndRejectsInvalidPoints) {
   const RangeImageProjector projector =
       makeCameraProjector(640, 480, 500, 500, 320, 240);
   int u = -1, v = -1;
@@ -110,8 +107,7 @@ TEST(RangeImageProjectorCamera, NearestPointPerPixelWins) {
   ASSERT_EQ(v_far, v_near);
 
   // Nearest must win regardless of input order (upstream kept the first).
-  for (const Pointcloud& pts :
-       {Pointcloud{far, near}, Pointcloud{near, far}}) {
+  for (const Pointcloud& pts : {Pointcloud{far, near}, Pointcloud{near, far}}) {
     const RangeImage img = project(projector, kW, kH, pts);
     EXPECT_NEAR(img.depth_image.at<float>(v_near, u_near), near.norm(), 1e-6);
     const cv::Vec3f vertex = img.vertex_map.at<cv::Vec3f>(v_near, u_near);
@@ -128,8 +124,7 @@ TEST(RangeImageProjectorCamera, PointsBehindCameraAreDropped) {
   constexpr int kW = 640, kH = 480;
   const RangeImageProjector projector =
       makeCameraProjector(kW, kH, 500, 500, 320, 240);
-  const RangeImage img =
-      project(projector, kW, kH, {Point(0.1f, 0.1f, -1.0f)});
+  const RangeImage img = project(projector, kW, kH, {Point(0.1f, 0.1f, -1.0f)});
   EXPECT_TRUE(
       projector.extractPointCloud(img.vertex_map, img.depth_image).empty());
 }
@@ -164,7 +159,8 @@ TEST(RangeImageProjectorCamera, IntegerIntrinsicsStillAccepted) {
 TEST(RangeImageProjectorCamera, PlaneNormalsIncludingLastRowAndColumn) {
   constexpr int kW = 8, kH = 6;
   constexpr double kF = 10.0, kCx = 4.0, kCy = 3.0;
-  const RangeImageProjector projector = makeCameraProjector(kW, kH, kF, kF, kCx, kCy);
+  const RangeImageProjector projector =
+      makeCameraProjector(kW, kH, kF, kF, kCx, kCy);
   Pointcloud pts;
   constexpr float kZ = 2.0f;
   for (int v = 0; v < kH; ++v) {

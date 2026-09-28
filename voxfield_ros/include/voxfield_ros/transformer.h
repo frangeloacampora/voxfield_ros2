@@ -6,9 +6,9 @@
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <string>
-#include <thread>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
+#include <thread>
 #include <voxfield/core/common.h>
 
 namespace voxfield {

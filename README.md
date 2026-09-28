@@ -57,14 +57,14 @@ Topic/service names below are relative to the node (`~` = node-private); this re
 
 | Topic/service | Type | Servers | Notes |
 |---|---|---|---|
-| `pointcloud` | `sensor_msgs/msg/PointCloud2` | all | The sensor data to integrate. Remap this to your sensor's topic. |
+| `pointcloud` | `sensor_msgs/msg/PointCloud2` | all | The sensor data to integrate. Remap this to your sensor's topic. Legacy (single-sensor) mode only: with `sensor_names` set, each sensor subscribes to its own `sensors.<name>.topic` instead (see [Multiple sensors](#multiple-sensors-one-map)). |
 | `freespace_pointcloud` | `sensor_msgs/msg/PointCloud2` | all | Optional; only subscribed if `use_freespace_pointcloud: true`. |
 | `transform` | `geometry_msgs/msg/TransformStamped` | all | Only subscribed if `use_tf_transforms: false` (e.g. the `cow`/`vicon` presets); otherwise pose comes from TF. Queued and interpolated between samples, not just exact-matched. |
 | `~/intensity_image` | `sensor_msgs/msg/Image` | `intensity_server` | Via `cv_bridge`. |
 | `~/tsdf_map_in` | `voxfield_msgs/msg/Layer` | all | Merge in an externally-published TSDF layer. |
 | `~/esdf_map_in` | `voxfield_msgs/msg/Layer` | ESDF-capable | Merge in an externally-published ESDF layer. |
 
-**Pose:** by default (`use_tf_transforms: true`), looked up via `tf2_ros::Buffer` as `world_frame ← sensor_frame` (both ROS params) at each point cloud's timestamp — so `/tf`/`/tf_static` (or a bag played with `--clock`) must actually carry that transform. With `use_tf_transforms: false`, poses instead come from the `transform` topic above.
+**Pose:** by default (`use_tf_transforms: true`), looked up via `tf2_ros::Buffer` as `world_frame ← sensor_frame` (both ROS params; an empty `sensor_frame` uses the cloud's own `header.frame_id`) at each point cloud's timestamp — so `/tf`/`/tf_static` (or a bag played with `--clock`) must actually carry that transform. With `use_tf_transforms: false`, poses instead come from the `transform` topic above.
 
 ### Output
 
@@ -167,6 +167,72 @@ ros2 launch voxfield_ros mapping.launch.py \
 ```
 
 `ros2 launch voxfield_ros mapping.launch.py --show-args` lists every override (`speed`, `rviz`, `rviz_config`, `robot_model_file`, `use_sim_time`, ...).
+
+### Multiple sensors (one map)
+
+Every server can fuse several depth sensors (e.g. two LiDARs, or LiDARs plus RGB-D cameras) into **one** TSDF, ESDF and mesh. Each sensor gets its own subscription, pose lookup, throttle and integrator settings. For the projective `np_tsdf`/`voxfield` servers, each sensor also gets its own range-image model. All of them write into the same map.
+
+**Legacy vs multi-sensor mode.** If the `sensor_names` parameter is not set, a server behaves exactly as before: one sensor on the `pointcloud` topic, configured by the top-level parameters. Setting `sensor_names` switches to multi-sensor mode, and each named sensor is configured under `sensors.<name>.*`. Any key a sensor doesn't set is inherited from the top-level parameter of the same name, so shared settings are written once. To use legacy mode, omit `sensor_names` entirely: an empty list (`[]`) doesn't parse in ROS 2 YAML.
+
+```yaml
+/**:
+  ros__parameters:
+    sensor_names: [front_lidar, back_lidar]
+    world_frame: map
+    body_frame: base_link        # pose used for block removal / clear sphere
+    sensor_is_lidar: true        # inherited by both sensors
+    fov_up: 53.5
+    fov_down: -8.0
+    width: 360
+    height: 32
+    max_ray_length_m: 12.0
+    sensors:
+      front_lidar:
+        topic: /athena/front_lidar/points_raw_livox
+      back_lidar:
+        topic: /athena/back_lidar/points_raw_livox
+        # any per-sensor key can be overridden here, e.g. max_ray_length_m: 8.0
+```
+
+The complete example, validated on a robot with two Livox LiDARs and two RGB-D cameras, is `voxfield_ros/cfg/multi_sensor/athena_param.yaml` (map-global) plus `athena_dual_lidar.yaml` or `athena_lidar_rgbd.yaml` (sensors).
+
+**Per-sensor keys** (`sensors.<name>.<key>`). Any other key is rejected at start-up, with one error that lists every problem found:
+
+| Keys | Notes |
+|---|---|
+| `topic` (required), `freespace_topic` | Input topics. |
+| `frame` | Overrides the cloud's frame for the pose lookup. Default: the cloud's `header.frame_id`. It is **not** inherited from `sensor_frame`. |
+| `pointcloud_queue_size`, `input_qos_best_effort`, `min_time_between_msgs_sec` | Subscription depth, QoS and per-sensor throttle. |
+| `T_B_C`, `invert_T_B_C` | Extrinsic, only used when `use_tf_transforms: false`. |
+| `method`, `min_ray_length_m`, `max_ray_length_m`, `voxel_carving_enabled`, `allow_clear`, `use_const_weight`, `use_weight_dropoff`, `use_sparsity_compensation_factor`, `sparsity_compensation_factor`, `anti_grazing`, `merge_with_clear`, `start_voxel_subsampling_factor`, `max_consecutive_ray_collisions`, `clear_checks_every_n_frames`, `max_integration_time_s` | TSDF integrator. |
+| `weight_reduction_exp`, `normal_available`, `reliable_band_ratio`, `curve_assumption`, `reliable_normal_ratio_thre` | Non-projective integrator (`np_tsdf`, `voxfield`). |
+| `sensor_is_lidar`, `width`, `height`, `fov_up`, `fov_down`, `vx`, `vy`, `fx`, `fy`, `smooth_thre_ratio`, `min_z`, `min_dist` | Range-image model (`np_tsdf`, `voxfield`): LiDAR field of view, or camera intrinsics. |
+
+Map-global keys can't be set per sensor. They include the voxel size, truncation, threads, `world_frame`, `use_tf_transforms`, `enable_icp`, `body_frame`, and the `esdf_*`/`occ_*`/`mesh_*` and `publish_*`/`update_*` keys. Multi-sensor mode adds three global keys:
+- `sensor_names`: the sensors to configure.
+- `body_frame`: the pose used for block removal and the clear sphere. The default `""` uses each sensor's own pose, as in legacy mode.
+- `transform_queue_retention_sec` (default 1.0): how much transform-queue history is kept for out-of-order lookups when `use_tf_transforms: false`.
+
+Things to know:
+- **Frame counting:** every integrated cloud from every sensor counts as one "frame". A negative `update_mesh_every_n_sec`/`update_esdf_every_n_sec` ("every N frames") therefore fires N_sensors times as often. Use positive values (seconds) with several sensors.
+- **ICP** (`enable_icp`) is single-sensor only. With more than one sensor, the server logs an error and disables it.
+- The robot-model marker follows the first sensor in `sensor_names`.
+
+**Launch.** `multi_sensor_mapping.launch.py` starts a server with a map-global `param_file` and a `sensors_file`. It can also play a bag (`bag_file`, `speed`, `start_offset`) and start RViz2 with `cfg/rviz/multi_sensor.rviz`:
+
+```
+ros2 launch voxfield_ros multi_sensor_mapping.launch.py method:=voxfield \
+    param_file:=<share>/cfg/multi_sensor/athena_param.yaml \
+    sensors_file:=<share>/cfg/multi_sensor/athena_dual_lidar.yaml \
+    bag_file:=<path/to/bag> tf_remap_prefix:=/athena
+```
+
+- `tf_remap_prefix:=/athena` remaps `/tf` and `/tf_static` to `/athena/tf`/`/athena/tf_static` for both the server and RViz2. Use it for robots that publish namespaced TF.
+- Bag playback always applies `cfg/multi_sensor/tf_static_qos_override.yaml`, so late-joining nodes still receive `/tf_static`.
+
+**RGB-D cameras via `depth_image_proc`.** A depth camera is just another sensor. Set `sensor_is_lidar: false`, its `width`/`height`, and the intrinsics `fx`/`fy`/`vx` (= cx)/`vy` (= cy) from its `camera_info`. The server needs a `PointCloud2`, so `rgbd:=true` loads one `ComposableNodeContainer` per camera. Each container runs `image_transport::Republisher` (`in_transport: compressedDepth`, `out_transport: raw`) and then `depth_image_proc::PointCloudXyzNode`, which publishes `/athena/<camera>_rgbd/points`. Use `athena_lidar_rgbd.yaml` as the sensors file. It also shows typical camera settings: `max_ray_length_m: 4.0`, and `min_time_between_msgs_sec: 0.4` to keep dense depth clouds within the integration budget.
+
+`docs/MULTI_SENSOR_NOTES.md` (Phase 9) has the measurements, tuning decisions and known issues from validating this on a real robot bag.
 
 ### Customizing, comparison and evaluation
 

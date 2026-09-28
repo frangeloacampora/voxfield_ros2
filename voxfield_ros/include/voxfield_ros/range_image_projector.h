@@ -1,9 +1,8 @@
 #ifndef VOXFIELD_ROS_RANGE_IMAGE_PROJECTOR_H_
 #define VOXFIELD_ROS_RANGE_IMAGE_PROJECTOR_H_
 
-#include <string>
-
 #include <opencv2/core/mat.hpp>
+#include <string>
 #include <voxfield/core/common.h>
 
 namespace voxfield {

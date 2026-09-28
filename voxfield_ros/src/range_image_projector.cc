@@ -9,7 +9,7 @@ bool RangeImageProjector::Config::isValid(std::string* why) const {
   if (width <= 0 || height <= 0) {
     if (why != nullptr) {
       *why = "width and height must both be positive (got width=" +
-          std::to_string(width) + ", height=" + std::to_string(height) + ")";
+             std::to_string(width) + ", height=" + std::to_string(height) + ")";
     }
     return false;
   }
@@ -17,16 +17,15 @@ bool RangeImageProjector::Config::isValid(std::string* why) const {
     if (fov_up == fov_down) {
       if (why != nullptr) {
         *why = "fov_up and fov_down must differ for a LiDAR model (got " +
-            std::to_string(fov_up) + ")";
+               std::to_string(fov_up) + ")";
       }
       return false;
     }
   } else {
     if (!(fx > 0.f) || !(fy > 0.f)) {
       if (why != nullptr) {
-        *why =
-            "fx and fy must both be positive for a camera model (got fx=" +
-            std::to_string(fx) + ", fy=" + std::to_string(fy) + ")";
+        *why = "fx and fy must both be positive for a camera model (got fx=" +
+               std::to_string(fx) + ", fy=" + std::to_string(fy) + ")";
       }
       return false;
     }
@@ -45,19 +44,17 @@ RangeImageProjector::RangeImageProjector(const Config& config)
 
 void RangeImageProjector::process(
     const Pointcloud& points_in, const Colors& colors_in,
-    Pointcloud* points_out, Pointcloud* normals_out,
-    Colors* colors_out) const {
+    Pointcloud* points_out, Pointcloud* normals_out, Colors* colors_out) const {
   CHECK_NOTNULL(points_out);
   CHECK_NOTNULL(normals_out);
   CHECK_NOTNULL(colors_out);
 
-  cv::Mat vertex_map =
-      cv::Mat::zeros(config_.height, config_.width, CV_32FC3);
+  cv::Mat vertex_map = cv::Mat::zeros(config_.height, config_.width, CV_32FC3);
   cv::Mat depth_image(vertex_map.size(), CV_32FC1, -1.0);
   cv::Mat color_image = cv::Mat::zeros(vertex_map.size(), CV_8UC3);
   projectPointCloudToImage(
-      points_in, colors_in, vertex_map, depth_image, color_image,
-      config_.min_z, config_.min_dist);
+      points_in, colors_in, vertex_map, depth_image, color_image, config_.min_z,
+      config_.min_dist);
   const cv::Mat normal_image = computeNormalImage(vertex_map, depth_image);
 
   *points_out = extractPointCloud(vertex_map, depth_image);

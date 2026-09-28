@@ -8,20 +8,18 @@
 // unit (both define voxfield::kDefaultMaxIntensity), so CMake builds this
 // file twice, once per server, with TEST_NP_TSDF_SERVER on/off -- the same
 // pattern as test_server_map_io.cc's TEST_VOXBLOX_SERVER.
-#include <gtest/gtest.h>
-
+#include <Eigen/Core>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
-#include <memory>
-#include <string>
-#include <vector>
-
-#include <Eigen/Core>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <gtest/gtest.h>
+#include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <string>
+#include <vector>
 #include <voxfield/io/layer_io.h>
 
 #ifdef TEST_NP_TSDF_SERVER
@@ -97,15 +95,16 @@ class BoxRoomLidar {
       double t_exit = std::numeric_limits<double>::infinity();
       for (int axis = 0; axis < 3; ++axis) {
         if (dir_world[axis] > 0.0) {
-          t_exit =
-              std::min(t_exit, (box_max[axis] - position[axis]) / dir_world[axis]);
+          t_exit = std::min(
+              t_exit, (box_max[axis] - position[axis]) / dir_world[axis]);
         } else if (dir_world[axis] < 0.0) {
-          t_exit =
-              std::min(t_exit, (box_min[axis] - position[axis]) / dir_world[axis]);
+          t_exit = std::min(
+              t_exit, (box_min[axis] - position[axis]) / dir_world[axis]);
         }
       }
       const Eigen::Vector3d hit_world = position + t_exit * dir_world;
-      const Eigen::Vector3d hit_local = rot.transpose() * (hit_world - position);
+      const Eigen::Vector3d hit_local =
+          rot.transpose() * (hit_world - position);
       hits_local.emplace_back(hit_local.cast<float>());
     }
     return hits_local;
@@ -208,8 +207,8 @@ void runScenario(
     lidar.sensorPose(static_cast<double>(frame_ns) * 1e-9, &position, &yaw);
     const std::vector<Eigen::Vector3f> points = lidar.raycast(position, yaw);
 
-    const auto cloud_msg = makeCloudMsg(
-        points, rclcpp::Time(frame_ns, RCL_ROS_TIME), frame_id);
+    const auto cloud_msg =
+        makeCloudMsg(points, rclcpp::Time(frame_ns, RCL_ROS_TIME), frame_id);
     server->insertPointcloud(cloud_msg);
   }
 }
@@ -254,7 +253,7 @@ void CompareLayersExact(
 
 std::string goldenPath() {
   return std::string(VOXFIELD_ROS_TEST_DATA_DIR) + "/golden_" +
-      TEST_SERVER_NAME ".tsdf";
+         TEST_SERVER_NAME ".tsdf";
 }
 
 bool writeGoldenRequested() {
@@ -301,16 +300,18 @@ rclcpp::Node::SharedPtr makeNode(const std::string& name) {
 #ifdef TEST_NP_TSDF_SERVER
 // Matches the plan's explicit NP LiDAR model (§8 Phase 1 step 1).
 BoxRoomLidar makeLidar() {
-  return BoxRoomLidar(/*width=*/256, /*height=*/16, /*fov_up_deg=*/3.0,
-                       /*fov_down_deg=*/-25.0);
+  return BoxRoomLidar(
+      /*width=*/256, /*height=*/16, /*fov_up_deg=*/3.0,
+      /*fov_down_deg=*/-25.0);
 }
 #else
 // TsdfServer doesn't reproject onto a range image, so any dense, deterministic
 // coverage of the room works; wider vertical FOV than the NP case since
 // there's no per-pixel reprojection constraint to satisfy.
 BoxRoomLidar makeLidar() {
-  return BoxRoomLidar(/*width=*/180, /*height=*/16, /*fov_up_deg=*/20.0,
-                       /*fov_down_deg=*/-20.0);
+  return BoxRoomLidar(
+      /*width=*/180, /*height=*/16, /*fov_up_deg=*/20.0,
+      /*fov_down_deg=*/-20.0);
 }
 #endif
 

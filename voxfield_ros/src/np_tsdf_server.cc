@@ -162,8 +162,7 @@ NpTsdfServer::NpTsdfServer(
     sensor->config = loaded.input;
     sensor->integrator = makeNpTsdfIntegrator(
         loaded.method, loaded.np_tsdf, tsdf_map_->getTsdfLayerPtr());
-    sensor->projector =
-        std::make_unique<RangeImageProjector>(loaded.projector);
+    sensor->projector = std::make_unique<RangeImageProjector>(loaded.projector);
     sensors_.push_back(std::move(sensor));
   }
 
@@ -509,8 +508,7 @@ void NpTsdfServer::processPointCloudMessageAndInsert(
     const Transformation identity_extrinsic;
     if (transformer_.lookupSensorTransform(
             body_frame_, &identity_extrinsic,
-            rclcpp::Time(pointcloud_msg->header.stamp, RCL_ROS_TIME),
-            &T_G_B)) {
+            rclcpp::Time(pointcloud_msg->header.stamp, RCL_ROS_TIME), &T_G_B)) {
       T_pose = T_G_B;
     } else {
       RCLCPP_WARN_THROTTLE(
@@ -583,14 +581,13 @@ bool NpTsdfServer::getNextPointcloudFromQueue(
 
   // MULTI_SENSOR_PLAN.md F1/M5: see the identical comment in tsdf_server.cc.
   const std::string& from_frame = sensor->config.frame.empty()
-      ? (*pointcloud_msg)->header.frame_id
-      : sensor->config.frame;
+                                      ? (*pointcloud_msg)->header.frame_id
+                                      : sensor->config.frame;
   const Transformation* T_B_C_or_null =
       sensor->config.has_T_B_C ? &sensor->config.T_B_C : nullptr;
   if (transformer_.lookupSensorTransform(
           from_frame, T_B_C_or_null,
-          rclcpp::Time((*pointcloud_msg)->header.stamp, RCL_ROS_TIME),
-          T_G_C)) {
+          rclcpp::Time((*pointcloud_msg)->header.stamp, RCL_ROS_TIME), T_G_C)) {
     queue->pop();
     return true;
   } else {

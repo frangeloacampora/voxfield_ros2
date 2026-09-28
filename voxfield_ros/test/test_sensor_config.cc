@@ -1,14 +1,12 @@
 // Unit tests for loadSensors() (MULTI_SENSOR_PLAN.md Phase 4, M2/M13):
 // legacy-mode passthrough, multi-sensor inheritance, and fail-fast
 // validation.
-#include <gtest/gtest.h>
-
 #include <functional>
+#include <gtest/gtest.h>
+#include <rclcpp/rclcpp.hpp>
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-#include <rclcpp/rclcpp.hpp>
 
 #include "voxfield_ros/ros_params.h"
 #include "voxfield_ros/sensor_config_loader.h"
@@ -65,17 +63,13 @@ TEST(SensorConfig, LegacyModeReturnsOneDefaultSensor) {
       sensors[0].tsdf.default_truncation_distance,
       tsdf_base.default_truncation_distance);
   EXPECT_FLOAT_EQ(sensors[0].tsdf.max_weight, tsdf_base.max_weight);
-  EXPECT_FLOAT_EQ(
-      sensors[0].tsdf.min_ray_length_m, tsdf_base.min_ray_length_m);
-  EXPECT_FLOAT_EQ(
-      sensors[0].tsdf.max_ray_length_m, tsdf_base.max_ray_length_m);
+  EXPECT_FLOAT_EQ(sensors[0].tsdf.min_ray_length_m, tsdf_base.min_ray_length_m);
+  EXPECT_FLOAT_EQ(sensors[0].tsdf.max_ray_length_m, tsdf_base.max_ray_length_m);
   EXPECT_EQ(
       sensors[0].tsdf.voxel_carving_enabled, tsdf_base.voxel_carving_enabled);
+  EXPECT_EQ(sensors[0].tsdf.integrator_threads, tsdf_base.integrator_threads);
   EXPECT_EQ(
-      sensors[0].tsdf.integrator_threads, tsdf_base.integrator_threads);
-  EXPECT_EQ(
-      sensors[0].tsdf.integration_order_mode,
-      tsdf_base.integration_order_mode);
+      sensors[0].tsdf.integration_order_mode, tsdf_base.integration_order_mode);
 }
 
 TEST(SensorConfig, LegacyModeWithStraySensorsOverrideIsIgnored) {
@@ -99,8 +93,7 @@ TEST(SensorConfig, PerSensorOverrideInheritsFromTopLevel) {
   auto node = makeNode(
       "inheritance",
       {rclcpp::Parameter("max_ray_length_m", 45.0),
-       rclcpp::Parameter(
-           "sensor_names", std::vector<std::string>{"a", "b"}),
+       rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
        rclcpp::Parameter("sensors.a.topic", "topic_a"),
        rclcpp::Parameter("sensors.b.topic", "topic_b"),
        rclcpp::Parameter("sensors.b.max_ray_length_m", 5.0)});
@@ -150,7 +143,8 @@ TEST(SensorConfig, UnknownKeyTypoThrows) {
       getTsdfIntegratorConfigFromRosParam(*node);
 
   const std::string message = throwMessage([&] {
-    loadSensors(*node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
+    loadSensors(
+        *node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
   });
   EXPECT_NE(message.find("max_ray_lenght_m"), std::string::npos) << message;
   EXPECT_NE(message.find("unknown"), std::string::npos) << message;
@@ -166,7 +160,8 @@ TEST(SensorConfig, UnknownSensorNameThrows) {
       getTsdfIntegratorConfigFromRosParam(*node);
 
   const std::string message = throwMessage([&] {
-    loadSensors(*node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
+    loadSensors(
+        *node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
   });
   EXPECT_NE(message.find("'c'"), std::string::npos) << message;
   EXPECT_NE(message.find("not in sensor_names"), std::string::npos) << message;
@@ -182,7 +177,8 @@ TEST(SensorConfig, ForbiddenMapGlobalKeyThrows) {
       getTsdfIntegratorConfigFromRosParam(*node);
 
   const std::string message = throwMessage([&] {
-    loadSensors(*node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
+    loadSensors(
+        *node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
   });
   EXPECT_NE(message.find("truncation_distance"), std::string::npos) << message;
   EXPECT_NE(message.find("map-global"), std::string::npos) << message;
@@ -196,7 +192,8 @@ TEST(SensorConfig, MissingTopicThrows) {
       getTsdfIntegratorConfigFromRosParam(*node);
 
   const std::string message = throwMessage([&] {
-    loadSensors(*node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
+    loadSensors(
+        *node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
   });
   EXPECT_NE(message.find("missing required key 'topic'"), std::string::npos)
       << message;
@@ -205,15 +202,15 @@ TEST(SensorConfig, MissingTopicThrows) {
 TEST(SensorConfig, DuplicateTopicThrows) {
   auto node = makeNode(
       "duplicate_topic",
-      {rclcpp::Parameter(
-           "sensor_names", std::vector<std::string>{"a", "b"}),
+      {rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
        rclcpp::Parameter("sensors.a.topic", "same"),
        rclcpp::Parameter("sensors.b.topic", "same")});
   const TsdfIntegratorBase::Config tsdf_base =
       getTsdfIntegratorConfigFromRosParam(*node);
 
   const std::string message = throwMessage([&] {
-    loadSensors(*node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
+    loadSensors(
+        *node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
   });
   EXPECT_NE(message.find("used by another sensor"), std::string::npos)
       << message;
@@ -222,13 +219,13 @@ TEST(SensorConfig, DuplicateTopicThrows) {
 TEST(SensorConfig, DuplicateNameThrows) {
   auto node = makeNode(
       "duplicate_name",
-      {rclcpp::Parameter(
-           "sensor_names", std::vector<std::string>{"a", "a"})});
+      {rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "a"})});
   const TsdfIntegratorBase::Config tsdf_base =
       getTsdfIntegratorConfigFromRosParam(*node);
 
   const std::string message = throwMessage([&] {
-    loadSensors(*node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
+    loadSensors(
+        *node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
   });
   EXPECT_NE(message.find("duplicated"), std::string::npos) << message;
 }
@@ -257,8 +254,7 @@ TEST(SensorConfig, InvalidProjectorConfigThrowsForNpServer) {
 TEST(SensorConfig, MultipleErrorsAreAllListed) {
   auto node = makeNode(
       "multiple_errors",
-      {rclcpp::Parameter(
-           "sensor_names", std::vector<std::string>{"a", "b"}),
+      {rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
        // 'a' is missing its required topic.
        rclcpp::Parameter("sensors.b.topic", "topic_b"),
        // 'b' also has an unknown key.
@@ -267,7 +263,8 @@ TEST(SensorConfig, MultipleErrorsAreAllListed) {
       getTsdfIntegratorConfigFromRosParam(*node);
 
   const std::string message = throwMessage([&] {
-    loadSensors(*node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
+    loadSensors(
+        *node, &tsdf_base, nullptr, nullptr, "merged", legacySensorConfig());
   });
   EXPECT_NE(message.find("missing required key 'topic'"), std::string::npos)
       << message;

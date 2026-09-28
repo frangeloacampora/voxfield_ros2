@@ -7,19 +7,17 @@
 // unit (both define voxfield::kDefaultMaxIntensity), so CMake builds this
 // file twice, once per server, with TEST_NP_TSDF_SERVER on/off -- the same
 // pattern as test_legacy_golden.cc's.
-#include <gtest/gtest.h>
-
-#include <cmath>
-#include <memory>
-#include <stdexcept>
-#include <string>
-#include <vector>
-
 #include <Eigen/Geometry>
+#include <cmath>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <gtest/gtest.h>
+#include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 #include "voxfield_ros/kindr_conversions.h"
 
@@ -81,15 +79,16 @@ class BoxRoomLidar {
       double t_exit = std::numeric_limits<double>::infinity();
       for (int axis = 0; axis < 3; ++axis) {
         if (dir_world[axis] > 0.0) {
-          t_exit =
-              std::min(t_exit, (box_max[axis] - position[axis]) / dir_world[axis]);
+          t_exit = std::min(
+              t_exit, (box_max[axis] - position[axis]) / dir_world[axis]);
         } else if (dir_world[axis] < 0.0) {
-          t_exit =
-              std::min(t_exit, (box_min[axis] - position[axis]) / dir_world[axis]);
+          t_exit = std::min(
+              t_exit, (box_min[axis] - position[axis]) / dir_world[axis]);
         }
       }
       const Eigen::Vector3d hit_world = position + t_exit * dir_world;
-      const Eigen::Vector3d hit_local = rot.transpose() * (hit_world - position);
+      const Eigen::Vector3d hit_local =
+          rot.transpose() * (hit_world - position);
       hits_local.emplace_back(hit_local.cast<float>());
     }
     return hits_local;
@@ -181,8 +180,7 @@ std::vector<rclcpp::Parameter> commonParams() {
 }
 
 rclcpp::Node::SharedPtr makeLegacyNode(
-    const std::string& name,
-    std::vector<rclcpp::Parameter> extra_params = {}) {
+    const std::string& name, std::vector<rclcpp::Parameter> extra_params = {}) {
   rclcpp::NodeOptions options;
   std::vector<rclcpp::Parameter> params = commonParams();
   params.insert(params.end(), extra_params.begin(), extra_params.end());
@@ -235,8 +233,7 @@ TEST(MultiSensorServer, AlternatingIdenticalSensorsMatchLegacy) {
 
   auto multi_node = makeMultiSensorNode(
       "equivalence_multi",
-      {rclcpp::Parameter(
-           "sensor_names", std::vector<std::string>{"a", "b"}),
+      {rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
        rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
        rclcpp::Parameter("sensors.b.topic", "b_pointcloud")});
   TestServer multi_server(multi_node);
@@ -258,15 +255,15 @@ TEST(MultiSensorServer, AlternatingIdenticalSensorsMatchLegacy) {
     lidar.sensorPose(static_cast<double>(minus_ns) * 1e-9, &position, &yaw);
     const Transformation T_minus(
         Transformation::Position(position.x(), position.y(), position.z()),
-        Transformation::Rotation(Eigen::Quaterniond(
-            Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()))
-                                      .cast<float>()));
+        Transformation::Rotation(
+            Eigen::Quaterniond(Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()))
+                .cast<float>()));
     lidar.sensorPose(static_cast<double>(plus_ns) * 1e-9, &position, &yaw);
     const Transformation T_plus(
         Transformation::Position(position.x(), position.y(), position.z()),
-        Transformation::Rotation(Eigen::Quaterniond(
-            Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()))
-                                      .cast<float>()));
+        Transformation::Rotation(
+            Eigen::Quaterniond(Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()))
+                .cast<float>()));
 
     pushTransform(&legacy_server, T_minus, minus_ns, "map");
     pushTransform(&legacy_server, T_plus, plus_ns, "map");
@@ -275,10 +272,10 @@ TEST(MultiSensorServer, AlternatingIdenticalSensorsMatchLegacy) {
 
     lidar.sensorPose(static_cast<double>(frame_ns) * 1e-9, &position, &yaw);
     const std::vector<Eigen::Vector3f> points = lidar.raycast(position, yaw);
-    const auto legacy_msg = makeCloudMsg(
-        points, rclcpp::Time(frame_ns, RCL_ROS_TIME), "lidar");
-    const auto multi_msg = makeCloudMsg(
-        points, rclcpp::Time(frame_ns, RCL_ROS_TIME), "lidar");
+    const auto legacy_msg =
+        makeCloudMsg(points, rclcpp::Time(frame_ns, RCL_ROS_TIME), "lidar");
+    const auto multi_msg =
+        makeCloudMsg(points, rclcpp::Time(frame_ns, RCL_ROS_TIME), "lidar");
 
     legacy_server.insertPointcloud(legacy_msg);
     multi_server.insertPointcloud(
@@ -295,8 +292,7 @@ TEST(MultiSensorServer, AlternatingIdenticalSensorsMatchLegacy) {
 TEST(MultiSensorServer, DifferentExtrinsicsEachSeeOwnWall) {
   auto node = makeMultiSensorNode(
       "different_extrinsics",
-      {rclcpp::Parameter(
-           "sensor_names", std::vector<std::string>{"a", "b"}),
+      {rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
        rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
        rclcpp::Parameter("sensors.b.topic", "b_pointcloud"),
        // A: T_B_C = identity (looks along local/body +x).
@@ -345,8 +341,7 @@ TEST(MultiSensorServer, DifferentExtrinsicsEachSeeOwnWall) {
 TEST(MultiSensorServer, ShortRayLengthDoesNotReachFarVoxels) {
   auto node = makeMultiSensorNode(
       "short_ray_length",
-      {rclcpp::Parameter(
-           "sensor_names", std::vector<std::string>{"a", "b"}),
+      {rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
        rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
        rclcpp::Parameter("sensors.b.topic", "b_pointcloud"),
        rclcpp::Parameter("sensors.b.max_ray_length_m", 2.0)});
@@ -385,8 +380,7 @@ TEST(MultiSensorServer, ShortRayLengthDoesNotReachFarVoxels) {
 TEST(MultiSensorServer, ThrottleIsPerSensor) {
   auto node = makeMultiSensorNode(
       "per_sensor_throttle",
-      {rclcpp::Parameter(
-           "sensor_names", std::vector<std::string>{"a", "b"}),
+      {rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
        rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
        rclcpp::Parameter("sensors.b.topic", "b_pointcloud"),
        rclcpp::Parameter("min_time_between_msgs_sec", 0.5)});
@@ -442,50 +436,46 @@ TEST(MultiSensorServer, ThrottleIsPerSensor) {
 // never hit it; this is the one test that picked an axis-aligned point by
 // hand.
 TEST(MultiSensorServer, BodyFrameChangesBlockRemovalReference) {
-  auto runScenario =
-      [](const std::string& name, bool use_body_frame) {
-        std::vector<rclcpp::Parameter> extra = {
-            rclcpp::Parameter(
-                "sensor_names", std::vector<std::string>{"a", "b"}),
-            rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
-            rclcpp::Parameter("sensors.b.topic", "b_pointcloud"),
-            rclcpp::Parameter(
-                "sensors.a.T_B_C",
-                std::vector<double>{
-                    1, 0, 0, 5, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}),
-            rclcpp::Parameter(
-                "sensors.b.T_B_C",
-                std::vector<double>{
-                    1, 0, 0, 6, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}),
-            rclcpp::Parameter("max_block_distance_from_body", 10.0),
-        };
-        if (use_body_frame) {
-          extra.push_back(rclcpp::Parameter("body_frame", "base_link"));
-        }
-        auto node = makeMultiSensorNode(name, extra);
-        auto server = std::make_unique<TestServer>(node);
+  auto runScenario = [](const std::string& name, bool use_body_frame) {
+    std::vector<rclcpp::Parameter> extra = {
+        rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
+        rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
+        rclcpp::Parameter("sensors.b.topic", "b_pointcloud"),
+        rclcpp::Parameter(
+            "sensors.a.T_B_C",
+            std::vector<double>{
+                1, 0, 0, 5, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}),
+        rclcpp::Parameter(
+            "sensors.b.T_B_C",
+            std::vector<double>{
+                1, 0, 0, 6, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}),
+        rclcpp::Parameter("max_block_distance_from_body", 10.0),
+    };
+    if (use_body_frame) {
+      extra.push_back(rclcpp::Parameter("body_frame", "base_link"));
+    }
+    auto node = makeMultiSensorNode(name, extra);
+    auto server = std::make_unique<TestServer>(node);
 
-        constexpr int64_t kMinusNs = 995000000LL;
-        constexpr int64_t kFrameNs = 1000000000LL;
-        constexpr int64_t kPlusNs = 1005000000LL;
-        pushTransform(server.get(), Transformation(), kMinusNs, "map");
-        pushTransform(server.get(), Transformation(), kPlusNs, "map");
-        const rclcpp::Time stamp(kFrameNs, RCL_ROS_TIME);
+    constexpr int64_t kMinusNs = 995000000LL;
+    constexpr int64_t kFrameNs = 1000000000LL;
+    constexpr int64_t kPlusNs = 1005000000LL;
+    pushTransform(server.get(), Transformation(), kMinusNs, "map");
+    pushTransform(server.get(), Transformation(), kPlusNs, "map");
+    const rclcpp::Time stamp(kFrameNs, RCL_ROS_TIME);
 
-        // Sensor A (world position (5,0,0)): local (7.5,0,0.3) -> world
-        // (12.5,0,0.3), inside the block with origin (12,0,0).
-        server->insertPointcloud(
-            makeCloudMsg(
-                {Eigen::Vector3f(7.5f, 0.0f, 0.3f)}, stamp, "a_frame"),
-            server->sensors_[0].get());
-        // Sensor B (world position (6,0,0)): a harmless nearby point, just
-        // to integrate from both sensors per the plan's scenario.
-        server->insertPointcloud(
-            makeCloudMsg(
-                {Eigen::Vector3f(1.0f, 0.0f, 0.3f)}, stamp, "b_frame"),
-            server->sensors_[1].get());
-        return server;
-      };
+    // Sensor A (world position (5,0,0)): local (7.5,0,0.3) -> world
+    // (12.5,0,0.3), inside the block with origin (12,0,0).
+    server->insertPointcloud(
+        makeCloudMsg({Eigen::Vector3f(7.5f, 0.0f, 0.3f)}, stamp, "a_frame"),
+        server->sensors_[0].get());
+    // Sensor B (world position (6,0,0)): a harmless nearby point, just
+    // to integrate from both sensors per the plan's scenario.
+    server->insertPointcloud(
+        makeCloudMsg({Eigen::Vector3f(1.0f, 0.0f, 0.3f)}, stamp, "b_frame"),
+        server->sensors_[1].get());
+    return server;
+  };
 
   const std::unique_ptr<TestServer> with_body =
       runScenario("body_frame_with", true);
@@ -516,8 +506,7 @@ TEST(MultiSensorServer, BodyFrameChangesBlockRemovalReference) {
 TEST(MultiSensorServer, IcpIsDisabledWithMultipleSensors) {
   auto node = makeMultiSensorNode(
       "icp_guard",
-      {rclcpp::Parameter(
-           "sensor_names", std::vector<std::string>{"a", "b"}),
+      {rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
        rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
        rclcpp::Parameter("sensors.b.topic", "b_pointcloud"),
        rclcpp::Parameter("enable_icp", true)});
@@ -544,8 +533,8 @@ TEST(MultiSensorServerNp, AlternatingIdenticalSensorsMatchLegacy) {
   TestServer legacy_server(legacy_node);
 
   std::vector<rclcpp::Parameter> multi_params = np_sensor_model;
-  multi_params.push_back(rclcpp::Parameter(
-      "sensor_names", std::vector<std::string>{"a", "b"}));
+  multi_params.push_back(
+      rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}));
   multi_params.push_back(rclcpp::Parameter("sensors.a.topic", "a_pointcloud"));
   multi_params.push_back(rclcpp::Parameter("sensors.b.topic", "b_pointcloud"));
   auto multi_node = makeMultiSensorNode("np_equivalence_multi", multi_params);
@@ -568,15 +557,15 @@ TEST(MultiSensorServerNp, AlternatingIdenticalSensorsMatchLegacy) {
     lidar.sensorPose(static_cast<double>(minus_ns) * 1e-9, &position, &yaw);
     const Transformation T_minus(
         Transformation::Position(position.x(), position.y(), position.z()),
-        Transformation::Rotation(Eigen::Quaterniond(
-            Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()))
-                                      .cast<float>()));
+        Transformation::Rotation(
+            Eigen::Quaterniond(Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()))
+                .cast<float>()));
     lidar.sensorPose(static_cast<double>(plus_ns) * 1e-9, &position, &yaw);
     const Transformation T_plus(
         Transformation::Position(position.x(), position.y(), position.z()),
-        Transformation::Rotation(Eigen::Quaterniond(
-            Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()))
-                                      .cast<float>()));
+        Transformation::Rotation(
+            Eigen::Quaterniond(Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()))
+                .cast<float>()));
 
     pushTransform(&legacy_server, T_minus, minus_ns, "map");
     pushTransform(&legacy_server, T_plus, plus_ns, "map");
@@ -585,10 +574,10 @@ TEST(MultiSensorServerNp, AlternatingIdenticalSensorsMatchLegacy) {
 
     lidar.sensorPose(static_cast<double>(frame_ns) * 1e-9, &position, &yaw);
     const std::vector<Eigen::Vector3f> points = lidar.raycast(position, yaw);
-    const auto legacy_msg = makeCloudMsg(
-        points, rclcpp::Time(frame_ns, RCL_ROS_TIME), "lidar");
-    const auto multi_msg = makeCloudMsg(
-        points, rclcpp::Time(frame_ns, RCL_ROS_TIME), "lidar");
+    const auto legacy_msg =
+        makeCloudMsg(points, rclcpp::Time(frame_ns, RCL_ROS_TIME), "lidar");
+    const auto multi_msg =
+        makeCloudMsg(points, rclcpp::Time(frame_ns, RCL_ROS_TIME), "lidar");
 
     legacy_server.insertPointcloud(legacy_msg);
     multi_server.insertPointcloud(
@@ -605,8 +594,7 @@ TEST(MultiSensorServerNp, AlternatingIdenticalSensorsMatchLegacy) {
 TEST(MultiSensorServerNp, MixedLidarAndCameraSensorsBothIntegrate) {
   auto node = makeMultiSensorNode(
       "np_mixed_lidar_camera",
-      {rclcpp::Parameter(
-           "sensor_names", std::vector<std::string>{"a", "b"}),
+      {rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
        rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
        rclcpp::Parameter("sensors.a.sensor_is_lidar", true),
        rclcpp::Parameter("sensors.a.width", 256),
@@ -690,8 +678,7 @@ TEST(MultiSensorServerNp, MixedLidarAndCameraSensorsBothIntegrate) {
 TEST(MultiSensorServerNp, InvalidProjectorConfigThrowsAtConstruction) {
   auto node = makeMultiSensorNode(
       "np_invalid_projector",
-      {rclcpp::Parameter(
-           "sensor_names", std::vector<std::string>{"a", "b"}),
+      {rclcpp::Parameter("sensor_names", std::vector<std::string>{"a", "b"}),
        rclcpp::Parameter("sensors.a.topic", "a_pointcloud"),
        rclcpp::Parameter("sensors.a.sensor_is_lidar", true),
        rclcpp::Parameter("sensors.a.width", 256),

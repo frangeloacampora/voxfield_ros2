@@ -4,10 +4,9 @@
 #include <cstddef>
 #include <memory>
 #include <queue>
-#include <string>
-
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <string>
 #include <voxfield/core/common.h>
 
 #include "voxfield_ros/range_image_projector.h"
@@ -22,11 +21,11 @@ namespace voxfield {
 struct SensorConfig {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  std::string name;             // "default" in legacy mode
-  std::string topic;            // legacy: "pointcloud"
-  std::string freespace_topic;  // "" = none
-  std::string frame;            // "" = use header.frame_id (M5)
-  int queue_size = 1;           // inherits pointcloud_queue_size
+  std::string name;                        // "default" in legacy mode
+  std::string topic;                       // legacy: "pointcloud"
+  std::string freespace_topic;             // "" = none
+  std::string frame;                       // "" = use header.frame_id (M5)
+  int queue_size = 1;                      // inherits pointcloud_queue_size
   bool input_qos_best_effort = false;      // inherits
   double min_time_between_msgs_sec = 0.0;  // inherits
   // Queue mode only (M6): if false, the sensor inherits Transformer's
