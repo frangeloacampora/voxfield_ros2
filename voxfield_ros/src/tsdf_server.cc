@@ -457,7 +457,11 @@ void TsdfServer::processPointCloudMessageAndInsert(
 
   // M10: the robot model marker follows the primary sensor only (in legacy
   // mode that's every cloud, as today).
-  if (!sensors_.empty() && sensor == sensors_[0].get()) {
+  // Upstream read `publish_robot_model` but never checked it, so the marker
+  // was always published -- with no `robot_model_file`, RViz then failed to
+  // load "file://" on every cloud.
+  if (publish_robot_model_ && !sensors_.empty() &&
+      sensor == sensors_[0].get()) {
     publishRobotMesh(T_G_C_refined);
   }
 

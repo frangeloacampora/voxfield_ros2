@@ -142,7 +142,13 @@ void VoxfieldMeshVisual::setMessage(
     if (alpha < std::numeric_limits<uint8_t>::max()) {
       material_name = "VoxfieldMaterialTransparent";
     }
-    ogre_object->begin(material_name, Ogre::RenderOperation::OT_TRIANGLE_LIST);
+    // The materials live in MaterialLoader's own resource group. Ogre 1.9
+    // (ROS 1) searched every group when none was given; Ogre 1.12+
+    // (rviz_ogre_vendor) only looks in the group passed here, which
+    // defaults to "General", so without it no mesh block got a material.
+    ogre_object->begin(
+        material_name, Ogre::RenderOperation::OT_TRIANGLE_LIST,
+        "VoxfieldMaterials");
 
     for (size_t i = 0; i < connected_mesh.vertices.size(); ++i) {
       // note calling position changes what vertex the color and normal calls

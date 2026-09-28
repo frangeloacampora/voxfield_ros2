@@ -26,3 +26,6 @@ qtcreator-*
 
 # colcon per-package build opt-out
 COLCON_IGNORE
+
+# Claude Code personal settings
+.claude/settings.local.json

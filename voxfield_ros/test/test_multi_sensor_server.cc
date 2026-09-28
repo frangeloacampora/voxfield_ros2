@@ -8,6 +8,7 @@
 // file twice, once per server, with TEST_NP_TSDF_SERVER on/off -- the same
 // pattern as test_legacy_golden.cc's.
 #include <Eigen/Geometry>
+#include <chrono>
 #include <cmath>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <gtest/gtest.h>
@@ -18,6 +19,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <visualization_msgs/msg/marker.hpp>
 
 #include "voxfield_ros/kindr_conversions.h"
 
@@ -221,6 +223,78 @@ void CompareLayersExact(
       EXPECT_EQ(e.weight, a.weight);
     }
   }
+}
+
+// ---- Robot-model marker honours publish_robot_model (both servers) ----
+
+// Integrates one box-room frame into `server` and returns how many
+// ~/Robot_model markers `node_name`'s server published meanwhile. Upstream
+// read `publish_robot_model` but never checked it, so the marker was always
+// published -- with no robot_model_file, RViz then failed to load "file://"
+// on every cloud.
+int countRobotMarkers(TestServer* server, const std::string& node_name) {
+  auto listener = std::make_shared<rclcpp::Node>(node_name + "_listener");
+  int count = 0;
+  auto sub = listener->create_subscription<visualization_msgs::msg::Marker>(
+      "/" + node_name + "/Robot_model", rclcpp::QoS(100),
+      [&count](visualization_msgs::msg::Marker::ConstSharedPtr) { ++count; });
+  // Let discovery connect the in-process publisher and subscription.
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(listener);
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (sub->get_publisher_count() == 0 &&
+         std::chrono::steady_clock::now() < deadline) {
+    executor.spin_some(std::chrono::milliseconds(10));
+  }
+
+  const BoxRoomLidar lidar(180, 16, 20.0, -20.0);
+  constexpr int64_t kFrameNs = 1000000000LL;
+  constexpr int64_t kHalfBracketNs = 5000000LL;
+  Eigen::Vector3d position;
+  double yaw;
+  lidar.sensorPose(1.0, &position, &yaw);
+  const Transformation T(
+      Transformation::Position(position.x(), position.y(), position.z()),
+      Transformation::Rotation(
+          Eigen::Quaterniond(Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()))
+              .cast<float>()));
+  pushTransform(server, T, kFrameNs - kHalfBracketNs, "map");
+  pushTransform(server, T, kFrameNs + kHalfBracketNs, "map");
+  server->insertPointcloud(makeCloudMsg(
+      lidar.raycast(position, yaw), rclcpp::Time(kFrameNs, RCL_ROS_TIME),
+      "lidar"));
+
+  const auto spin_until =
+      std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+  while (std::chrono::steady_clock::now() < spin_until) {
+    executor.spin_some(std::chrono::milliseconds(10));
+  }
+  return count;
+}
+
+std::vector<rclcpp::Parameter> robotMarkerParams(bool publish) {
+  // Sensor model params are needed by NpTsdfServer and ignored otherwise.
+  return {
+      rclcpp::Parameter("sensor_is_lidar", true),
+      rclcpp::Parameter("width", 180),
+      rclcpp::Parameter("height", 16),
+      rclcpp::Parameter("fov_up", 20.0),
+      rclcpp::Parameter("fov_down", -20.0),
+      rclcpp::Parameter("publish_robot_model", publish),
+      rclcpp::Parameter("robot_model_file", std::string("/tmp/robot.dae"))};
+}
+
+TEST(RobotModelMarker, NotPublishedWhenDisabled) {
+  auto node = makeLegacyNode("robot_marker_off", robotMarkerParams(false));
+  TestServer server(node);
+  EXPECT_EQ(countRobotMarkers(&server, "robot_marker_off"), 0);
+}
+
+TEST(RobotModelMarker, PublishedWhenEnabled) {
+  auto node = makeLegacyNode("robot_marker_on", robotMarkerParams(true));
+  TestServer server(node);
+  EXPECT_GT(countRobotMarkers(&server, "robot_marker_on"), 0);
 }
 
 #ifndef TEST_NP_TSDF_SERVER
